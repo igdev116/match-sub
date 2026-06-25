@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #172033;
+  background: #f4f5fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-sidebar {
+  position: relative;
+  background: #171a32 !important;
+  box-shadow: 4px 0 24px rgba(22, 26, 54, 0.12);
+}
+
+.app-brand {
+  display: flex;
+  height: 72px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.app-brand-icon {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: white;
+  background: linear-gradient(135deg, #8072ff, #5d4ee8);
+  box-shadow: 0 8px 20px rgba(109, 93, 252, 0.35);
+}
+
+.app-menu {
+  margin-top: 12px;
+  background: transparent !important;
+}
+
+.app-menu .ant-menu-item {
+  margin-inline: 12px;
+  width: calc(100% - 24px);
+}
+
+.app-sidebar-version {
+  position: absolute;
+  bottom: 18px;
+  left: 24px;
+  color: rgba(255, 255, 255, 0.35) !important;
+  font-size: 12px;
+}
+
+.app-header {
+  display: flex;
+  height: 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px !important;
+  border-bottom: 1px solid #e9eaf1;
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(12px);
+}
+
+.app-content {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(109, 93, 252, 0.11), transparent 30%),
+    radial-gradient(circle at 95% 15%, rgba(43, 188, 174, 0.1), transparent 28%),
+    #f5f6fb;
+}
+
+.page-hero {
+  padding: 28px 32px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #161a36 0%, #2a2557 58%, #433984 100%);
+  box-shadow: 0 12px 36px rgba(35, 31, 75, 0.18);
+}
+
+.path-field {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-image {
+  width: 104px;
+  height: 60px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #e8eaf2;
+}
+
+@media (max-width: 768px) {
+  .app-content {
+    padding: 16px;
+  }
+
+  .page-hero {
+    padding: 22px;
+  }
+}
