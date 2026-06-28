@@ -24,6 +24,10 @@ import type {
   SampleBuildConfig,
   PathInfo,
   SourceFolderInspection,
+  AppProject,
+  ProjectState,
+  ProjectVideoSettings,
+  ProjectAudioSettings,
 } from './types'
 import { readScenes } from './xlsx-reader'
 import {
@@ -37,16 +41,22 @@ const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
 let building = false
 interface AppPreferences {
+  lastSourceFolder: string
   lastAudioDirectory: string
   lastSrtPath: string
   sampleImagePath: string
+  activeProjectId: string
+  projects: AppProject[]
 }
 const preferences = new Store<AppPreferences>({
   name: 'preferences',
   defaults: {
+    lastSourceFolder: '',
     lastAudioDirectory: '',
     lastSrtPath: '',
     sampleImagePath: '',
+    activeProjectId: '',
+    projects: [],
   },
 })
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp'])
@@ -66,6 +76,14 @@ const audioExtensions = new Set([
 
 function projectRoot(): string {
   return process.env.VITE_DEV_SERVER_URL ? process.cwd() : app.getAppPath()
+}
+
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
+function makeId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function existingPath(candidate: string): string {
@@ -238,6 +256,152 @@ function inspectSourceFolder(folderPath: string): SourceFolderInspection {
   }
 }
 
+function defaultVideoSettings(
+  rootPath: string,
+  inspection?: SourceFolderInspection,
+  emptySource = false,
+): ProjectVideoSettings {
+  const sourceFolderPath = emptySource ? '' : inspection?.folderPath || rootPath
+  return {
+    sourceFolderPath,
+    imagesDirectory: emptySource
+      ? ''
+      : inspection?.imagesDirectory || existingPath(path.join(rootPath, 'grok-images')),
+    sceneListPath: emptySource
+      ? ''
+      : inspection?.sceneListPath || existingPath(path.join(rootPath, 'noi-dung-cac-canh.xlsx')),
+    srtPath: emptySource
+      ? ''
+      : inspection?.srtPath || existingPath(path.join(rootPath, 'sub.srt')),
+    outputPath: inspection?.outputPath || path.join(rootPath, 'output.mp4'),
+    sampleImagePath: existingPath(preferences.get('sampleImagePath')),
+    sampleVideoPath: path.join(rootPath, 'motion-preview.mp4'),
+    mode: 'clips',
+    fps: 30,
+    sceneConcurrency: 1,
+    buildPerformance: 'cool',
+    ffmpegThreads: 1,
+    scenePauseMs: 250,
+    resolution: '1920x1080',
+    motionEffect: 'zoom-right',
+    motionZoomPercent: 8,
+    motionHoldMode: 'percent',
+    motionHoldPercent: 20,
+    motionHoldSeconds: 2,
+  }
+}
+
+function defaultAudioSettings(rootPath: string): ProjectAudioSettings {
+  return {
+    audioDirectory: existingPath(preferences.get('lastAudioDirectory')),
+    outputPath: path.join(rootPath, 'merged-audio.mp3'),
+    pauseSeconds: 1,
+    createSrt: true,
+    language: 'auto',
+    whisperThreads: 4,
+    pageSize: 10,
+  }
+}
+
+function createProjectFromFolder(folderPath: string, activate = true): AppProject {
+  const inspection = inspectSourceFolder(folderPath)
+  const timestamp = nowIso()
+  const project: AppProject = {
+    id: makeId(),
+    name: path.basename(folderPath) || 'Dự án mới',
+    rootPath: folderPath,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    videoSettings: defaultVideoSettings(folderPath, inspection),
+    audioSettings: defaultAudioSettings(folderPath),
+    lastSrtPath: inspection.srtPath,
+  }
+  const projects = [project, ...preferences.get('projects')]
+  preferences.set('projects', projects)
+  if (activate) preferences.set('activeProjectId', project.id)
+  return project
+}
+
+function createEmptyProject(name: string, activate = true): AppProject {
+  const root = projectRoot()
+  const timestamp = nowIso()
+  const project: AppProject = {
+    id: makeId(),
+    name: name.trim() || 'Dự án mới',
+    rootPath: root,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    videoSettings: defaultVideoSettings(root, undefined, true),
+    audioSettings: defaultAudioSettings(root),
+    lastSrtPath: '',
+  }
+  const projects = [project, ...preferences.get('projects')]
+  preferences.set('projects', projects)
+  if (activate) preferences.set('activeProjectId', project.id)
+  return project
+}
+
+function ensureProjectsMigrated(): void {
+  const projects = preferences.get('projects')
+  if (projects.length > 0) return
+
+  const rememberedSourceFolder = existingPath(preferences.get('lastSourceFolder'))
+  if (rememberedSourceFolder) {
+    createProjectFromFolder(rememberedSourceFolder, true)
+    return
+  }
+
+  const root = projectRoot()
+  const inspection = inspectSourceFolder(root)
+  const timestamp = nowIso()
+  const project: AppProject = {
+    id: makeId(),
+    name: path.basename(root) || 'Dự án mặc định',
+    rootPath: root,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    videoSettings: defaultVideoSettings(root, inspection),
+    audioSettings: defaultAudioSettings(root),
+    lastSrtPath: inspection.srtPath || existingPath(preferences.get('lastSrtPath')),
+  }
+  preferences.set('projects', [project])
+  preferences.set('activeProjectId', project.id)
+}
+
+function getProjectState(): ProjectState {
+  ensureProjectsMigrated()
+  const projects = preferences.get('projects')
+  const activeProjectId = preferences.get('activeProjectId')
+  const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0] ?? null
+  if (activeProject && activeProject.id !== activeProjectId) {
+    preferences.set('activeProjectId', activeProject.id)
+  }
+  return {
+    projects,
+    activeProjectId: activeProject?.id ?? '',
+    activeProject,
+  }
+}
+
+function updateProject(projectId: string, updater: (project: AppProject) => AppProject): AppProject {
+  const projects = preferences.get('projects')
+  let updatedProject: AppProject | null = null
+  const nextProjects = projects.map((project) => {
+    if (project.id !== projectId) return project
+    updatedProject = updater({ ...project, updatedAt: nowIso() })
+    return updatedProject
+  })
+  if (!updatedProject) throw new Error('Không tìm thấy dự án.')
+  preferences.set('projects', nextProjects)
+  return updatedProject
+}
+
+function updateActiveProject(updater: (project: AppProject) => AppProject): AppProject {
+  const state = getProjectState()
+  if (!state.activeProject) throw new Error('Chưa chọn dự án.')
+  return updateProject(state.activeProject.id, updater)
+}
+
 function runCommand(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -296,12 +460,34 @@ async function listAudioFiles(directory: string): Promise<AudioFileItem[]> {
 
 function getProjectDefaults(): ProjectDefaults {
   const root = projectRoot()
+  const activeProject = getProjectState().activeProject
+  if (activeProject) {
+    return {
+      sourceFolderPath: activeProject.videoSettings.sourceFolderPath,
+      imagesDirectory: activeProject.videoSettings.imagesDirectory,
+      sceneListPath: activeProject.videoSettings.sceneListPath,
+      srtPath: activeProject.videoSettings.srtPath,
+      outputPath: activeProject.videoSettings.outputPath,
+      sampleImagePath: activeProject.videoSettings.sampleImagePath,
+      sampleVideoPath: activeProject.videoSettings.sampleVideoPath,
+    }
+  }
+  const rememberedSourceFolder = existingPath(preferences.get('lastSourceFolder'))
   const rememberedSrtPath = existingPath(preferences.get('lastSrtPath'))
   return {
-    imagesDirectory: existingPath(path.join(root, 'grok-images')),
-    sceneListPath: existingPath(path.join(root, 'noi-dung-cac-canh.xlsx')),
-    srtPath: rememberedSrtPath || existingPath(path.join(root, 'sub.srt')),
-    outputPath: path.join(root, 'output.mp4'),
+    sourceFolderPath: rememberedSourceFolder,
+    imagesDirectory: rememberedSourceFolder
+      ? ''
+      : existingPath(path.join(root, 'grok-images')),
+    sceneListPath: rememberedSourceFolder
+      ? ''
+      : existingPath(path.join(root, 'noi-dung-cac-canh.xlsx')),
+    srtPath: rememberedSourceFolder
+      ? ''
+      : rememberedSrtPath || existingPath(path.join(root, 'sub.srt')),
+    outputPath: rememberedSourceFolder
+      ? path.join(rememberedSourceFolder, 'output.mp4')
+      : path.join(root, 'output.mp4'),
     sampleImagePath: existingPath(preferences.get('sampleImagePath')),
     sampleVideoPath: path.join(root, 'motion-preview.mp4'),
   }
@@ -386,6 +572,62 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle('project:list', () => getProjectState())
+
+  ipcMain.handle('project:create', (_event, name: string) => {
+    createEmptyProject(name, true)
+    return getProjectState()
+  })
+
+  ipcMain.handle('project:createFromSourceFolder', async () => {
+    if (!mainWindow) return getProjectState()
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
+    if (!result.canceled && result.filePaths[0]) {
+      createProjectFromFolder(result.filePaths[0], true)
+    }
+    return getProjectState()
+  })
+
+  ipcMain.handle('project:select', (_event, projectId: string) => {
+    const projects = preferences.get('projects')
+    if (!projects.some((project) => project.id === projectId)) {
+      throw new Error('Không tìm thấy dự án.')
+    }
+    preferences.set('activeProjectId', projectId)
+    return getProjectState()
+  })
+
+  ipcMain.handle('project:rename', (_event, projectId: string, name: string) => {
+    updateProject(projectId, (project) => ({ ...project, name: name.trim() || project.name }))
+    return getProjectState()
+  })
+
+  ipcMain.handle('project:delete', (_event, projectId: string) => {
+    const projects = preferences.get('projects').filter((project) => project.id !== projectId)
+    preferences.set('projects', projects)
+    if (preferences.get('activeProjectId') === projectId) {
+      preferences.set('activeProjectId', projects[0]?.id ?? '')
+    }
+    return getProjectState()
+  })
+
+  ipcMain.handle('project:updateVideoSettings', (_event, patch: Partial<ProjectVideoSettings>) => {
+    updateActiveProject((project) => ({
+      ...project,
+      videoSettings: { ...project.videoSettings, ...patch },
+      lastSrtPath: patch.srtPath ?? project.lastSrtPath,
+    }))
+    return getProjectState()
+  })
+
+  ipcMain.handle('project:updateAudioSettings', (_event, patch: Partial<ProjectAudioSettings>) => {
+    updateActiveProject((project) => ({
+      ...project,
+      audioSettings: { ...project.audioSettings, ...patch },
+    }))
+    return getProjectState()
+  })
+
   ipcMain.handle('dialog:openDirectory', async () => {
     if (!mainWindow) return null
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
@@ -396,12 +638,33 @@ app.whenReady().then(() => {
     if (!mainWindow) return null
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
-    return inspectSourceFolder(result.filePaths[0])
+    const folderPath = result.filePaths[0]
+    preferences.set('lastSourceFolder', folderPath)
+    const inspection = inspectSourceFolder(folderPath)
+    try {
+      updateActiveProject((project) => ({
+        ...project,
+        rootPath: folderPath,
+        videoSettings: {
+          ...project.videoSettings,
+          sourceFolderPath: inspection.folderPath,
+          imagesDirectory: inspection.imagesDirectory,
+          sceneListPath: inspection.sceneListPath,
+          srtPath: inspection.srtPath,
+          outputPath: inspection.outputPath,
+        },
+        lastSrtPath: inspection.srtPath || project.lastSrtPath,
+      }))
+    } catch {
+      // Source folder can still be inspected before a project exists.
+    }
+    return inspection
   })
 
-  ipcMain.handle('source:inspectFolder', (_event, folderPath: string) =>
-    inspectSourceFolder(folderPath),
-  )
+  ipcMain.handle('source:inspectFolder', (_event, folderPath: string) => {
+    if (folderPath) preferences.set('lastSourceFolder', folderPath)
+    return inspectSourceFolder(folderPath)
+  })
 
   ipcMain.handle('source:getPathInfo', (_event, targetPath: string) => pathInfo(targetPath))
 
@@ -418,6 +681,17 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths[0]) return null
     const filePath = result.filePaths[0]
     if (isSrtPicker) preferences.set('lastSrtPath', filePath)
+    if (isSrtPicker) {
+      try {
+        updateActiveProject((project) => ({
+          ...project,
+          lastSrtPath: filePath,
+          videoSettings: { ...project.videoSettings, srtPath: filePath },
+        }))
+      } catch {
+        // Legacy preference already persisted above.
+      }
+    }
     return filePath
   })
 
@@ -430,6 +704,17 @@ app.whenReady().then(() => {
     })
     if (result.canceled || result.filePaths.length === 0) return []
     preferences.set('lastAudioDirectory', path.dirname(result.filePaths[0]))
+    try {
+      updateActiveProject((project) => ({
+        ...project,
+        audioSettings: {
+          ...project.audioSettings,
+          audioDirectory: path.dirname(result.filePaths[0]),
+        },
+      }))
+    } catch {
+      // Legacy preference already persisted above.
+    }
     return result.filePaths.map((filePath) => ({
       path: filePath,
       name: fileName(filePath),
@@ -448,11 +733,19 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths[0]) return null
     const filePath = result.filePaths[0]
     preferences.set('sampleImagePath', filePath)
+    try {
+      updateActiveProject((project) => ({
+        ...project,
+        videoSettings: { ...project.videoSettings, sampleImagePath: filePath },
+      }))
+    } catch {
+      // Legacy preference already persisted above.
+    }
     return filePath
   })
 
   ipcMain.handle('audio:getDirectory', async () => {
-    const directory = preferences.get('lastAudioDirectory')
+    const directory = getProjectState().activeProject?.audioSettings.audioDirectory ?? preferences.get('lastAudioDirectory')
     return {
       directory,
       files: [],
@@ -468,6 +761,14 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths[0]) return null
     const directory = result.filePaths[0]
     preferences.set('lastAudioDirectory', directory)
+    try {
+      updateActiveProject((project) => ({
+        ...project,
+        audioSettings: { ...project.audioSettings, audioDirectory: directory },
+      }))
+    } catch {
+      // Legacy preference already persisted above.
+    }
     return {
       directory,
       files: [],

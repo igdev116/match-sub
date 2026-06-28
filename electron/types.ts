@@ -16,6 +16,7 @@ export interface ImagePreviewItem {
 }
 
 export interface ProjectDefaults {
+  sourceFolderPath: string
   imagesDirectory: string
   sceneListPath: string
   srtPath: string
@@ -53,6 +54,55 @@ export interface SourceFolderInspection {
   }
 }
 
+export interface ProjectVideoSettings {
+  sourceFolderPath: string
+  imagesDirectory: string
+  sceneListPath: string
+  srtPath: string
+  outputPath: string
+  sampleImagePath: string
+  sampleVideoPath: string
+  mode: BuildConfig['mode']
+  fps: number
+  sceneConcurrency: number
+  buildPerformance: NonNullable<BuildConfig['buildPerformance']>
+  ffmpegThreads: number
+  scenePauseMs: number
+  resolution: string
+  motionEffect: BuildConfig['motionEffect']
+  motionZoomPercent: number
+  motionHoldMode: NonNullable<BuildConfig['motionHoldMode']>
+  motionHoldPercent: number
+  motionHoldSeconds: number
+}
+
+export interface ProjectAudioSettings {
+  audioDirectory: string
+  outputPath: string
+  pauseSeconds: number
+  createSrt: boolean
+  language: string
+  whisperThreads: number
+  pageSize: number
+}
+
+export interface AppProject {
+  id: string
+  name: string
+  rootPath: string
+  createdAt: string
+  updatedAt: string
+  videoSettings: ProjectVideoSettings
+  audioSettings: ProjectAudioSettings
+  lastSrtPath: string
+}
+
+export interface ProjectState {
+  projects: AppProject[]
+  activeProjectId: string
+  activeProject: AppProject | null
+}
+
 export interface AlignmentItem {
   sceneNumber: number
   sceneContent: string
@@ -74,6 +124,9 @@ export interface BuildConfig extends PreviewConfig {
   mode: 'full' | 'clips'
   fps: number
   sceneConcurrency?: number
+  buildPerformance?: 'cool' | 'balanced' | 'quality'
+  ffmpegThreads?: number
+  scenePauseMs?: number
   resolution: string
   motionEffect:
     | 'auto'
@@ -99,6 +152,8 @@ export interface SampleBuildConfig {
   outputPath: string
   fps: number
   resolution: string
+  buildPerformance?: BuildConfig['buildPerformance']
+  ffmpegThreads?: number
   motionEffect: BuildConfig['motionEffect']
   motionZoomPercent: number
   motionHoldMode?: BuildConfig['motionHoldMode']

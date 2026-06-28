@@ -3,45 +3,72 @@ import {
   AudioOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  ProjectOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons'
 import { Button, Layout, Menu, Typography } from 'antd'
 import type { MenuProps } from 'antd'
+import type { AppProject } from '../../electron/types'
 import { useSettingsStore } from '../stores/useSettingsStore'
 
 const { Header, Content, Sider } = Layout
 
-export type AppMenuKey = 'video-builder' | 'audio-merge'
+export type AppToolKey = 'video-builder' | 'audio-merge'
+export type AppMenuKey = 'project-manager' | `project:${string}:${AppToolKey}`
 
 interface AppShellProps {
   activeKey: AppMenuKey
-  onNavigate: (key: AppMenuKey) => void
+  onNavigate: (key: AppMenuKey) => void | Promise<void>
+  projects: AppProject[]
+  activeProjectId: string
   children: ReactNode
 }
 
-const menuItems: MenuProps['items'] = [
-  {
-    key: 'tools',
-    type: 'group',
-    label: 'CÔNG CỤ',
-    children: [
-      {
-        key: 'video-builder',
-        icon: <VideoCameraOutlined />,
-        label: 'Video Builder',
-      },
-      {
-        key: 'audio-merge',
-        icon: <AudioOutlined />,
-        label: 'Ghép audio',
-      },
-    ],
-  },
-]
-
-export default function AppShell({ activeKey, onNavigate, children }: AppShellProps) {
+export default function AppShell({
+  activeKey,
+  onNavigate,
+  projects,
+  activeProjectId,
+  children,
+}: AppShellProps) {
   const collapsed = useSettingsStore((state) => state.sidebarCollapsed)
   const setCollapsed = useSettingsStore((state) => state.setSidebarCollapsed)
+  const menuItems: MenuProps['items'] = [
+    {
+      key: 'workspace',
+      type: 'group',
+      label: 'WORKSPACE',
+      children: [
+        {
+          key: 'project-manager',
+          icon: <ProjectOutlined />,
+          label: 'Quản lý dự án',
+        },
+      ],
+    },
+    {
+      key: 'projects',
+      type: 'group',
+      label: 'DỰ ÁN',
+      children: projects.map((project) => ({
+        key: `project:${project.id}`,
+        icon: <ProjectOutlined />,
+        label: project.name,
+        children: [
+          {
+            key: `project:${project.id}:video-builder`,
+            icon: <VideoCameraOutlined />,
+            label: 'Video Builder',
+          },
+          {
+            key: `project:${project.id}:audio-merge`,
+            icon: <AudioOutlined />,
+            label: 'Ghép audio',
+          },
+        ],
+      })),
+    },
+  ]
 
   return (
     <Layout className="h-screen overflow-hidden">
@@ -70,13 +97,17 @@ export default function AppShell({ activeKey, onNavigate, children }: AppShellPr
         </div>
 
         <Menu
+          key={`${projects.length}-${activeProjectId}-${collapsed ? 'collapsed' : 'open'}`}
           className="app-menu"
           theme="dark"
           mode="inline"
           selectedKeys={[activeKey]}
+          defaultOpenKeys={projects.map((project) => `project:${project.id}`)}
           items={menuItems}
           inlineCollapsed={collapsed}
-          onClick={({ key }) => onNavigate(key as AppMenuKey)}
+          onClick={({ key }) => {
+            void onNavigate(key as AppMenuKey)
+          }}
         />
 
         {!collapsed && (
@@ -92,7 +123,9 @@ export default function AppShell({ activeKey, onNavigate, children }: AppShellPr
             onClick={() => setCollapsed(!collapsed)}
             aria-label={collapsed ? 'Mở sidebar' : 'Thu gọn sidebar'}
           />
-          <Typography.Text type="secondary">Video production workspace</Typography.Text>
+          <Typography.Text type="secondary">
+            {activeProjectId ? 'Project workspace' : 'Chọn hoặc tạo dự án để bắt đầu'}
+          </Typography.Text>
         </Header>
         <Content className="app-content">{children}</Content>
       </Layout>

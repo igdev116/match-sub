@@ -38,7 +38,7 @@ import FileSelector from '../components/FileSelector'
 import SourcePreview, {
   type SourcePreviewData,
 } from '../components/SourcePreview'
-import { useSettingsStore } from '../stores/useSettingsStore'
+import { useProjectStore } from '../stores/useProjectStore'
 
 const RESOLUTIONS = ['1920x1080', '1280x720', '1080x1920', '3840x2160']
 
@@ -57,9 +57,9 @@ const emptyPathInfo: PathInfo = {
 
 function formatPathMeta(info?: PathInfo): string {
   if (!info?.exists) return ''
-  const timestamp = info.createdAt || info.modifiedAt
+  const timestamp = info.modifiedAt || info.createdAt
   if (!timestamp) return ''
-  return `Tạo lúc: ${dayjs(timestamp).format('DD/MM/YYYY HH:mm')} (${dayjs(timestamp).fromNow()})`
+  return `Cập nhật: ${dayjs(timestamp).format('DD/MM/YYYY HH:mm')} (${dayjs(timestamp).fromNow()})`
 }
 
 export default function BuildPage() {
@@ -77,26 +77,21 @@ export default function BuildPage() {
   })
   const [sourceErrors, setSourceErrors] = useState<Partial<Record<SourceKey, string>>>({})
   const [sourceInspecting, setSourceInspecting] = useState(false)
-  const {
-    videoMode: mode,
-    setVideoMode: setMode,
-    videoFps: fps,
-    setVideoFps: setFps,
-    videoSceneConcurrency: sceneConcurrency,
-    setVideoSceneConcurrency: setSceneConcurrency,
-    videoResolution: resolution,
-    setVideoResolution: setResolution,
-    motionEffect,
-    setMotionEffect,
-    motionZoomPercent,
-    setMotionZoomPercent,
-    motionHoldMode,
-    setMotionHoldMode,
-    motionHoldPercent,
-    setMotionHoldPercent,
-    motionHoldSeconds,
-    setMotionHoldSeconds,
-  } = useSettingsStore()
+  const activeProject = useProjectStore((state) => state.activeProject)
+  const updateVideoSettings = useProjectStore((state) => state.updateVideoSettings)
+  const videoSettings = activeProject?.videoSettings
+  const mode = videoSettings?.mode ?? 'clips'
+  const fps = videoSettings?.fps ?? 30
+  const sceneConcurrency = videoSettings?.sceneConcurrency ?? 1
+  const buildPerformance = videoSettings?.buildPerformance ?? 'cool'
+  const ffmpegThreads = videoSettings?.ffmpegThreads ?? 1
+  const scenePauseMs = videoSettings?.scenePauseMs ?? 250
+  const resolution = videoSettings?.resolution ?? '1920x1080'
+  const motionEffect = videoSettings?.motionEffect ?? 'zoom-right'
+  const motionZoomPercent = videoSettings?.motionZoomPercent ?? 8
+  const motionHoldMode = videoSettings?.motionHoldMode ?? 'percent'
+  const motionHoldPercent = videoSettings?.motionHoldPercent ?? 20
+  const motionHoldSeconds = videoSettings?.motionHoldSeconds ?? 2
   const [sampleImagePath, setSampleImagePath] = useState('')
   const [sampleVideoPath, setSampleVideoPath] = useState('')
   const [sampleBuilding, setSampleBuilding] = useState(false)
@@ -114,37 +109,8 @@ export default function BuildPage() {
   const [sourcePreviewLoading, setSourcePreviewLoading] = useState(false)
 
   useEffect(() => {
-    void Promise.all([window.videoBuilder.checkFFmpeg(), window.videoBuilder.getDefaults()])
-      .then(([ffmpegResult, defaults]) => {
-        setFfmpeg({ checking: false, available: ffmpegResult.available })
-        setImagesDirectory(defaults.imagesDirectory)
-        setSceneListPath(defaults.sceneListPath)
-        setSrtPath(defaults.srtPath)
-        setOutputPath(defaults.outputPath)
-        setSampleImagePath(defaults.sampleImagePath)
-        setSampleVideoPath(defaults.sampleVideoPath)
-        void Promise.all([
-          window.videoBuilder.getPathInfo(defaults.imagesDirectory),
-          window.videoBuilder.getPathInfo(defaults.sceneListPath),
-          window.videoBuilder.getPathInfo(defaults.srtPath),
-          window.videoBuilder.getPathInfo(defaults.outputPath),
-        ]).then(([imagesInfo, sceneInfo, srtInfo, outputInfo]) => {
-          setSourceInfos({
-            imagesDirectory: imagesInfo,
-            sceneListPath: sceneInfo,
-            srtPath: srtInfo,
-            outputPath: outputInfo,
-          })
-          const nextErrors: Partial<Record<SourceKey, string>> = {}
-          const imagesError = validatePath('imagesDirectory', defaults.imagesDirectory, imagesInfo)
-          const sceneError = validatePath('sceneListPath', defaults.sceneListPath, sceneInfo)
-          const srtError = validatePath('srtPath', defaults.srtPath, srtInfo)
-          if (imagesError) nextErrors.imagesDirectory = imagesError
-          if (sceneError) nextErrors.sceneListPath = sceneError
-          if (srtError) nextErrors.srtPath = srtError
-          setSourceErrors(nextErrors)
-        })
-      })
+    void window.videoBuilder.checkFFmpeg()
+      .then((ffmpegResult) => setFfmpeg({ checking: false, available: ffmpegResult.available }))
       .catch(() => setFfmpeg({ checking: false, available: false }))
     return window.videoBuilder.onBuildProgress((nextProgress) => {
       setProgress(nextProgress)
@@ -153,6 +119,38 @@ export default function BuildPage() {
       }
     })
   }, [])
+
+  useEffect(() => {
+    if (!videoSettings) return
+    setSourceFolder(videoSettings.sourceFolderPath)
+    setImagesDirectory(videoSettings.imagesDirectory)
+    setSceneListPath(videoSettings.sceneListPath)
+    setSrtPath(videoSettings.srtPath)
+    setOutputPath(videoSettings.outputPath)
+    setSampleImagePath(videoSettings.sampleImagePath)
+    setSampleVideoPath(videoSettings.sampleVideoPath)
+    void Promise.all([
+      window.videoBuilder.getPathInfo(videoSettings.imagesDirectory),
+      window.videoBuilder.getPathInfo(videoSettings.sceneListPath),
+      window.videoBuilder.getPathInfo(videoSettings.srtPath),
+      window.videoBuilder.getPathInfo(videoSettings.outputPath),
+    ]).then(([imagesInfo, sceneInfo, srtInfo, outputInfo]) => {
+      setSourceInfos({
+        imagesDirectory: imagesInfo,
+        sceneListPath: sceneInfo,
+        srtPath: srtInfo,
+        outputPath: outputInfo,
+      })
+      const nextErrors: Partial<Record<SourceKey, string>> = {}
+      const imagesError = validatePath('imagesDirectory', videoSettings.imagesDirectory, imagesInfo)
+      const sceneError = validatePath('sceneListPath', videoSettings.sceneListPath, sceneInfo)
+      const srtError = validatePath('srtPath', videoSettings.srtPath, srtInfo)
+      if (imagesError) nextErrors.imagesDirectory = imagesError
+      if (sceneError) nextErrors.sceneListPath = sceneError
+      if (srtError) nextErrors.srtPath = srtError
+      setSourceErrors(nextErrors)
+    })
+  }, [activeProject?.id])
 
   const inputsReady = Boolean(imagesDirectory && sceneListPath && srtPath) &&
     !sourceErrors.imagesDirectory &&
@@ -179,6 +177,10 @@ export default function BuildPage() {
     setOutputPath(inspection.outputPath)
     setSourceInfos(inspection.infos)
     setSourceErrors(inspection.errors)
+  }
+
+  function saveVideoSettings(patch: Parameters<typeof updateVideoSettings>[0]) {
+    void updateVideoSettings(patch)
   }
 
   function validatePath(key: SourceKey, value: string, info: PathInfo): string | undefined {
@@ -222,6 +224,7 @@ export default function BuildPage() {
     if (result) {
       setImagesDirectory(result)
       await updatePathInfo('imagesDirectory', result)
+      saveVideoSettings({ imagesDirectory: result })
     }
   }
 
@@ -234,6 +237,7 @@ export default function BuildPage() {
     if (result) {
       setter(result)
       await updatePathInfo(key, result)
+      saveVideoSettings({ [key]: result })
     }
   }
 
@@ -242,6 +246,7 @@ export default function BuildPage() {
     if (result) {
       setOutputPath(result)
       await updatePathInfo('outputPath', result)
+      saveVideoSettings({ outputPath: result })
     }
   }
 
@@ -251,6 +256,13 @@ export default function BuildPage() {
       const result = await window.videoBuilder.selectSourceFolder()
       if (!result) return
       applySourceInspection(result)
+      saveVideoSettings({
+        sourceFolderPath: result.folderPath,
+        imagesDirectory: result.imagesDirectory,
+        sceneListPath: result.sceneListPath,
+        srtPath: result.srtPath,
+        outputPath: result.outputPath,
+      })
       const missingCount = Object.keys(result.errors).length
       if (missingCount > 0) {
         message.warning(`Đã đọc folder nguồn, còn thiếu ${missingCount} mục.`)
@@ -266,7 +278,25 @@ export default function BuildPage() {
 
   async function chooseSampleImage() {
     const result = await window.videoBuilder.selectSampleImage()
-    if (result) setSampleImagePath(result)
+    if (result) {
+      setSampleImagePath(result)
+      saveVideoSettings({ sampleImagePath: result })
+    }
+  }
+
+  function changeBuildPerformance(value: NonNullable<BuildConfig['buildPerformance']>) {
+    if (value === 'cool') {
+      saveVideoSettings({
+        buildPerformance: value,
+        ffmpegThreads: 1,
+        scenePauseMs: 250,
+        sceneConcurrency: 1,
+      })
+    } else if (value === 'balanced') {
+      saveVideoSettings({ buildPerformance: value, ffmpegThreads: 2, scenePauseMs: 100 })
+    } else {
+      saveVideoSettings({ buildPerformance: value, ffmpegThreads: 2, scenePauseMs: 0 })
+    }
   }
 
   function cleanError(error: unknown): string {
@@ -326,6 +356,9 @@ export default function BuildPage() {
       mode,
       fps,
       sceneConcurrency,
+      buildPerformance,
+      ffmpegThreads,
+      scenePauseMs,
       resolution,
       motionEffect,
       motionZoomPercent,
@@ -359,6 +392,8 @@ export default function BuildPage() {
         outputPath: sampleVideoPath,
         fps,
         resolution,
+        buildPerformance,
+        ffmpegThreads,
         motionEffect,
         motionZoomPercent,
         motionHoldMode,
@@ -366,6 +401,7 @@ export default function BuildPage() {
         motionHoldSeconds,
       })
       setSampleVideoPath(result)
+      saveVideoSettings({ sampleVideoPath: result })
       message.success('Đã build video test 10 giây.')
       await window.videoBuilder.showInFolder(result)
     } catch (error) {
@@ -461,7 +497,7 @@ export default function BuildPage() {
                 <Radio.Group
                   className="mt-3 block"
                   value={mode}
-                  onChange={(event) => setMode(event.target.value)}
+                  onChange={(event) => saveVideoSettings({ mode: event.target.value })}
                   disabled={busy}
                 >
                   <Space direction="vertical">
@@ -477,7 +513,7 @@ export default function BuildPage() {
                   min={1}
                   max={120}
                   value={fps}
-                  onChange={(value) => setFps(value ?? 30)}
+                  onChange={(value) => saveVideoSettings({ fps: value ?? 30 })}
                   disabled={busy}
                 />
               </div>
@@ -490,11 +526,61 @@ export default function BuildPage() {
                   step={1}
                   precision={0}
                   value={sceneConcurrency}
-                  onChange={(value) => setSceneConcurrency(value ?? 2)}
+                  onChange={(value) => saveVideoSettings({ sceneConcurrency: value ?? 1 })}
                   disabled={busy}
                 />
                 <Typography.Text className="mt-2 block" type="secondary">
                   Mặc định 2. Tăng lên 3–4 nếu máy khỏe; quá cao dễ làm lag.
+                </Typography.Text>
+              </div>
+              <div>
+                <Typography.Text strong>Chế độ hiệu năng</Typography.Text>
+                <Select
+                  className="mt-3 w-full"
+                  value={buildPerformance}
+                  options={[
+                    { value: 'cool', label: 'Mát máy / ít lag' },
+                    { value: 'balanced', label: 'Cân bằng' },
+                    { value: 'quality', label: 'Chất lượng cao' },
+                  ]}
+                  onChange={changeBuildPerformance}
+                  disabled={busy}
+                />
+                <Typography.Text className="mt-2 block" type="secondary">
+                  Mát máy sẽ giảm oversample, không nhân đôi render FPS và encode nhẹ hơn.
+                </Typography.Text>
+              </div>
+              <div>
+                <Typography.Text strong>FFmpeg threads</Typography.Text>
+                <InputNumber
+                  className="mt-3 !w-full"
+                  min={1}
+                  max={16}
+                  step={1}
+                  precision={0}
+                  value={ffmpegThreads}
+                  onChange={(value) => saveVideoSettings({ ffmpegThreads: value ?? 1 })}
+                  disabled={busy}
+                />
+                <Typography.Text className="mt-2 block" type="secondary">
+                  Giữ 1–2 để đỡ nóng máy. Đây là thread bên trong mỗi FFmpeg.
+                </Typography.Text>
+              </div>
+              <div>
+                <Typography.Text strong>Nghỉ giữa scene</Typography.Text>
+                <InputNumber
+                  className="mt-3 !w-full"
+                  min={0}
+                  max={5000}
+                  step={100}
+                  precision={0}
+                  addonAfter="ms"
+                  value={scenePauseMs}
+                  onChange={(value) => saveVideoSettings({ scenePauseMs: value ?? 0 })}
+                  disabled={busy}
+                />
+                <Typography.Text className="mt-2 block" type="secondary">
+                  250–500ms giúp máy có nhịp hạ tải, đổi lại build lâu hơn.
                 </Typography.Text>
               </div>
               <div>
@@ -503,7 +589,7 @@ export default function BuildPage() {
                   className="mt-3 w-full"
                   value={resolution}
                   options={RESOLUTIONS.map((value) => ({ value, label: value }))}
-                  onChange={setResolution}
+                  onChange={(value) => saveVideoSettings({ resolution: value })}
                   disabled={busy}
                 />
               </div>
@@ -526,7 +612,7 @@ export default function BuildPage() {
                     { value: 'zoom-out', label: 'Thu nhỏ dần' },
                     { value: 'none', label: 'Đứng yên' },
                   ]}
-                  onChange={setMotionEffect}
+                  onChange={(value) => saveVideoSettings({ motionEffect: value })}
                   disabled={busy}
                 />
                 <Typography.Text className="mt-2 block" type="secondary">
@@ -543,7 +629,7 @@ export default function BuildPage() {
                   precision={1}
                   addonAfter="%"
                   value={motionZoomPercent}
-                  onChange={(value) => setMotionZoomPercent(value ?? 8)}
+                  onChange={(value) => saveVideoSettings({ motionZoomPercent: value ?? 8 })}
                   disabled={busy || motionEffect === 'none'}
                 />
                 <Typography.Text className="mt-2 block" type="secondary">
@@ -555,7 +641,7 @@ export default function BuildPage() {
                 <Radio.Group
                   className="mt-3"
                   value={motionHoldMode}
-                  onChange={(event) => setMotionHoldMode(event.target.value)}
+                  onChange={(event) => saveVideoSettings({ motionHoldMode: event.target.value })}
                   disabled={busy || motionEffect === 'none'}
                 >
                   <Radio value="percent">Theo % scene</Radio>
@@ -570,7 +656,7 @@ export default function BuildPage() {
                     precision={2}
                     addonAfter="giây"
                     value={motionHoldSeconds}
-                    onChange={(value) => setMotionHoldSeconds(value ?? 2)}
+                    onChange={(value) => saveVideoSettings({ motionHoldSeconds: value ?? 2 })}
                     disabled={busy || motionEffect === 'none'}
                   />
                 ) : (
@@ -582,7 +668,7 @@ export default function BuildPage() {
                     precision={1}
                     addonAfter="%"
                     value={motionHoldPercent}
-                    onChange={(value) => setMotionHoldPercent(value ?? 20)}
+                    onChange={(value) => saveVideoSettings({ motionHoldPercent: value ?? 20 })}
                     disabled={busy || motionEffect === 'none'}
                   />
                 )}

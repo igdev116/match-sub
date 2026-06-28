@@ -42,7 +42,7 @@ import {
   SaveOutlined,
 } from '@ant-design/icons'
 import type { AudioFileItem, WhisperProgress, WhisperStatus } from '../../electron/types'
-import { useSettingsStore } from '../stores/useSettingsStore'
+import { useProjectStore } from '../stores/useProjectStore'
 
 interface AudioItem {
   id: string
@@ -133,33 +133,20 @@ export default function AudioMergePage() {
   const [processing, setProcessing] = useState(false)
   const [directoryLoading, setDirectoryLoading] = useState(false)
   const durationRequestedPaths = useRef(new Set<string>())
-  const {
-    audioPageSize: pageSize,
-    setAudioPageSize: setPageSize,
-    audioPauseSeconds: pauseSeconds,
-    setAudioPauseSeconds: setPauseSeconds,
-    audioCreateSrt: createSrt,
-    setAudioCreateSrt: setCreateSrt,
-    audioLanguage: language,
-    setAudioLanguage: setLanguage,
-    audioWhisperThreads: whisperThreads,
-    setAudioWhisperThreads: setWhisperThreads,
-  } = useSettingsStore()
+  const activeProject = useProjectStore((state) => state.activeProject)
+  const updateAudioSettings = useProjectStore((state) => state.updateAudioSettings)
+  const audioSettings = activeProject?.audioSettings
+  const pageSize = audioSettings?.pageSize ?? 10
+  const pauseSeconds = audioSettings?.pauseSeconds ?? 1
+  const createSrt = audioSettings?.createSrt ?? true
+  const language = audioSettings?.language ?? 'auto'
+  const whisperThreads = audioSettings?.whisperThreads ?? 4
   const [whisperStatus, setWhisperStatus] = useState<WhisperStatus | null>(null)
   const [whisperProgress, setWhisperProgress] = useState<WhisperProgress | null>(null)
   const [whisperSetupBusy, setWhisperSetupBusy] = useState(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   useEffect(() => {
-    void Promise.all([
-      window.videoBuilder.getDefaults(),
-      window.videoBuilder.getAudioDirectory(),
-    ]).then(([defaults, audioFolder]) => {
-      const separator = defaults.outputPath.includes('\\') ? '\\' : '/'
-      const root = defaults.outputPath.split(/[\\/]/).slice(0, -1).join(separator)
-      setOutputPath(`${root}${separator}merged-audio.mp3`)
-      setAudioDirectory(audioFolder.directory)
-    })
     const timer = window.setTimeout(() => {
       void refreshWhisperStatus()
     }, 300)
@@ -169,6 +156,19 @@ export default function AudioMergePage() {
       unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (!audioSettings) return
+    setAudioDirectory(audioSettings.audioDirectory)
+    setOutputPath(audioSettings.outputPath)
+    setItems([])
+    setCurrentPage(1)
+    durationRequestedPaths.current.clear()
+  }, [activeProject?.id])
+
+  function saveAudioSettings(patch: Parameters<typeof updateAudioSettings>[0]) {
+    void updateAudioSettings(patch)
+  }
 
   const pauseCount = Math.max(0, items.length - 1)
   const totalPause = useMemo(() => pauseCount * pauseSeconds, [pauseCount, pauseSeconds])
@@ -255,6 +255,11 @@ export default function AudioMergePage() {
       'wma',
     ])
     if (paths.length === 0) return
+    const firstDirectory = paths[0]?.path.split(/[\\/]/).slice(0, -1).join(paths[0].path.includes('\\') ? '\\' : '/')
+    if (firstDirectory) {
+      setAudioDirectory(firstDirectory)
+      saveAudioSettings({ audioDirectory: firstDirectory })
+    }
     setItems((current) => {
       const existing = new Set(current.map((item) => item.path))
       const additions = paths
@@ -282,6 +287,7 @@ export default function AudioMergePage() {
     const result = await window.videoBuilder.selectAudioDirectory()
     if (!result) return
     setAudioDirectory(result.directory)
+    saveAudioSettings({ audioDirectory: result.directory })
     durationRequestedPaths.current.clear()
     setItems([])
     setCurrentPage(1)
@@ -306,7 +312,10 @@ export default function AudioMergePage() {
 
   async function chooseOutput() {
     const selected = await window.videoBuilder.saveAudio(outputPath)
-    if (selected) setOutputPath(selected)
+    if (selected) {
+      setOutputPath(selected)
+      saveAudioSettings({ outputPath: selected })
+    }
   }
 
   async function showOutputFolder() {
@@ -484,7 +493,7 @@ export default function AudioMergePage() {
                 showTotal={(total, range) => `${range[0]}-${range[1]} / ${total} audio`}
                 onChange={(page, size) => {
                   if (size !== pageSize) {
-                    setPageSize(size)
+                    saveAudioSettings({ pageSize: size })
                     setCurrentPage(1)
                   } else {
                     setCurrentPage(page)
@@ -509,7 +518,7 @@ export default function AudioMergePage() {
               addonAfter="giây"
               value={pauseSeconds}
               disabled={processing}
-              onChange={(value) => setPauseSeconds(value ?? 1)}
+              onChange={(value) => saveAudioSettings({ pauseSeconds: value ?? 1 })}
             />
             <Typography.Text type="secondary" className="mt-2 block text-xs">
               {pauseCount} khoảng nghỉ, tổng cộng {totalPause.toFixed(1)} giây
@@ -541,7 +550,7 @@ export default function AudioMergePage() {
           <Switch
             checked={createSrt}
             disabled={processing || whisperSetupBusy}
-            onChange={setCreateSrt}
+            onChange={(value) => saveAudioSettings({ createSrt: value })}
           />
         }
       >
@@ -597,7 +606,7 @@ export default function AudioMergePage() {
                   className="mt-2 w-full"
                   value={language}
                   disabled={processing || whisperSetupBusy}
-                  onChange={setLanguage}
+                  onChange={(value) => saveAudioSettings({ language: value })}
                   options={[
                     { value: 'auto', label: 'Tự động nhận diện' },
                     { value: 'vi', label: 'Tiếng Việt' },
@@ -616,7 +625,7 @@ export default function AudioMergePage() {
                   max={8}
                   value={whisperThreads}
                   disabled={processing || whisperSetupBusy}
-                  onChange={(value) => setWhisperThreads(value ?? 4)}
+                  onChange={(value) => saveAudioSettings({ whisperThreads: value ?? 4 })}
                 />
                 <Typography.Text type="secondary" className="mt-2 block text-xs">
                   Mặc định 4 để app vẫn mượt khi Whisper chạy.

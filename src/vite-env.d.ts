@@ -14,6 +14,9 @@ import type {
   SourceFolderInspection,
   SrtEntry,
   PathInfo,
+  ProjectState,
+  ProjectVideoSettings,
+  ProjectAudioSettings,
   WhisperProgress,
   WhisperStatus,
 } from '../electron/types'
@@ -21,6 +24,14 @@ import type {
 declare global {
   interface Window {
     videoBuilder: {
+      getProjectState: () => Promise<ProjectState>
+      createProject: (name: string) => Promise<ProjectState>
+      createProjectFromSourceFolder: () => Promise<ProjectState>
+      selectProject: (projectId: string) => Promise<ProjectState>
+      renameProject: (projectId: string, name: string) => Promise<ProjectState>
+      deleteProject: (projectId: string) => Promise<ProjectState>
+      updateVideoProjectSettings: (patch: Partial<ProjectVideoSettings>) => Promise<ProjectState>
+      updateAudioProjectSettings: (patch: Partial<ProjectAudioSettings>) => Promise<ProjectState>
       openDirectory: () => Promise<string | null>
       openFile: (extensions: string[]) => Promise<string | null>
       openFiles: (extensions: string[]) => Promise<AudioFileItem[]>

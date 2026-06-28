@@ -11,6 +11,14 @@ import type {
 } from './types'
 
 type ProgressListener = (progress: BuildProgress) => void
+type PerformanceSettings = {
+  preset: string
+  crf: string
+  renderFpsMultiplier: 1 | 2
+  oversample: number
+  scaleFlags: 'bilinear' | 'bicubic' | 'lanczos'
+  threads: number
+}
 
 const activeProcesses = new Set<ChildProcess>()
 let stopRequested = false
@@ -69,6 +77,50 @@ function parseResolution(value: string): [number, number] {
   return [width, height]
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+function resolvePerformanceSettings(
+  width: number,
+  height: number,
+  performance: BuildConfig['buildPerformance'],
+  requestedThreads: number | undefined,
+): PerformanceSettings {
+  const mode = performance ?? 'cool'
+  const threads = Math.max(1, Math.min(16, Math.floor(requestedThreads ?? (mode === 'cool' ? 1 : 2))))
+  if (mode === 'quality') {
+    return {
+      preset: 'fast',
+      crf: '20',
+      renderFpsMultiplier: 2,
+      oversample: Math.max(2, Math.min(4, Math.floor(7680 / Math.max(width, height)))),
+      scaleFlags: 'lanczos',
+      threads,
+    }
+  }
+  if (mode === 'balanced') {
+    return {
+      preset: 'veryfast',
+      crf: '22',
+      renderFpsMultiplier: 2,
+      oversample: Math.max(2, Math.min(3, Math.floor(5760 / Math.max(width, height)))),
+      scaleFlags: 'bicubic',
+      threads,
+    }
+  }
+  return {
+    preset: 'veryfast',
+    crf: '23',
+    renderFpsMultiplier: 2,
+    oversample: 2,
+    scaleFlags: 'bicubic',
+    threads,
+  }
+}
+
 function sceneArgs(
   item: AlignmentItem,
   output: string,
@@ -80,6 +132,7 @@ function sceneArgs(
   motionHoldMode: BuildConfig['motionHoldMode'],
   motionHoldPercent: number,
   motionHoldSeconds: number,
+  performanceSettings: PerformanceSettings,
 ): string[] {
   const common = [
     '-t',
@@ -89,9 +142,11 @@ function sceneArgs(
     '-c:v',
     'libx264',
     '-preset',
-    'fast',
+    performanceSettings.preset,
     '-crf',
-    '20',
+    performanceSettings.crf,
+    '-threads',
+    String(performanceSettings.threads),
     '-pix_fmt',
     'yuv420p',
     '-an',
@@ -108,9 +163,9 @@ function sceneArgs(
     ]
   }
   const staticFilter =
-    `scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+    `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=${performanceSettings.scaleFlags},` +
     `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`
-  const renderFps = fps <= 60 ? fps * 2 : fps
+  const renderFps = performanceSettings.renderFpsMultiplier === 2 && fps <= 60 ? fps * 2 : fps
   const requestedHoldSeconds =
     motionHoldMode === 'seconds'
       ? motionHoldSeconds
@@ -173,11 +228,11 @@ function sceneArgs(
     },
   }
   const motion = motionExpressions[motionEffect]
-  const oversample = Math.max(2, Math.min(4, Math.floor(7680 / Math.max(width, height))))
+  const oversample = performanceSettings.oversample
   const motionWidth = width * oversample
   const motionHeight = height * oversample
   const motionBaseFilter =
-    `scale=${motionWidth}:${motionHeight}:force_original_aspect_ratio=decrease:flags=lanczos,` +
+    `scale=${motionWidth}:${motionHeight}:force_original_aspect_ratio=decrease:flags=${performanceSettings.scaleFlags},` +
     `pad=${motionWidth}:${motionHeight}:(ow-iw)/2:(oh-ih)/2:black`
   const videoFilter = motion
     ? `${motionBaseFilter},zoompan=` +
@@ -245,6 +300,24 @@ export async function buildVideo(
   if (!Number.isFinite(sceneConcurrency)) {
     throw new Error('Số scene build song song không hợp lệ.')
   }
+  const buildPerformance = config.buildPerformance ?? 'cool'
+  if (!['cool', 'balanced', 'quality'].includes(buildPerformance)) {
+    throw new Error('Chế độ hiệu năng không hợp lệ.')
+  }
+  const ffmpegThreads = Math.floor(config.ffmpegThreads ?? (buildPerformance === 'cool' ? 1 : 2))
+  if (!Number.isFinite(ffmpegThreads) || ffmpegThreads < 1 || ffmpegThreads > 16) {
+    throw new Error('FFmpeg threads phải từ 1 đến 16.')
+  }
+  const scenePauseMs = Math.floor(config.scenePauseMs ?? (buildPerformance === 'cool' ? 250 : 0))
+  if (!Number.isFinite(scenePauseMs) || scenePauseMs < 0 || scenePauseMs > 5000) {
+    throw new Error('Thời gian nghỉ giữa scene phải từ 0 đến 5000ms.')
+  }
+  const performanceSettings = resolvePerformanceSettings(
+    width,
+    height,
+    buildPerformance,
+    ffmpegThreads,
+  )
 
   const outputDirectory = path.dirname(config.outputPath)
   fs.mkdirSync(outputDirectory, { recursive: true })
@@ -323,9 +396,13 @@ export async function buildVideo(
               motionHoldMode,
               motionHoldPercent,
               motionHoldSeconds,
+              performanceSettings,
             ),
           )
           completedScenes += 1
+          if (scenePauseMs > 0 && !stopRequested) {
+            await sleep(scenePauseMs)
+          }
           onProgress({
             phase: 'encoding',
             percent: Math.round((completedScenes / alignment.length) * maxEncodePercent),
@@ -439,6 +516,20 @@ export async function buildSampleVideo(config: SampleBuildConfig): Promise<strin
   ) {
     throw new Error('Số giây giữ khung hình cuối phải từ 0 đến 300 giây.')
   }
+  const buildPerformance = config.buildPerformance ?? 'cool'
+  if (!['cool', 'balanced', 'quality'].includes(buildPerformance)) {
+    throw new Error('Chế độ hiệu năng không hợp lệ.')
+  }
+  const ffmpegThreads = Math.floor(config.ffmpegThreads ?? (buildPerformance === 'cool' ? 1 : 2))
+  if (!Number.isFinite(ffmpegThreads) || ffmpegThreads < 1 || ffmpegThreads > 16) {
+    throw new Error('FFmpeg threads phải từ 1 đến 16.')
+  }
+  const performanceSettings = resolvePerformanceSettings(
+    width,
+    height,
+    buildPerformance,
+    ffmpegThreads,
+  )
 
   stopRequested = false
   fs.mkdirSync(path.dirname(config.outputPath), { recursive: true })
@@ -470,6 +561,7 @@ export async function buildSampleVideo(config: SampleBuildConfig): Promise<strin
       motionHoldMode,
       config.motionHoldPercent,
       motionHoldSeconds,
+      performanceSettings,
     ),
   )
   return config.outputPath

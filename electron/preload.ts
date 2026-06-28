@@ -8,10 +8,28 @@ import type {
   SampleBuildConfig,
   SourceFolderInspection,
   PathInfo,
+  ProjectState,
+  ProjectVideoSettings,
+  ProjectAudioSettings,
   WhisperProgress,
 } from './types'
 
 contextBridge.exposeInMainWorld('videoBuilder', {
+  getProjectState: (): Promise<ProjectState> => ipcRenderer.invoke('project:list'),
+  createProject: (name: string): Promise<ProjectState> =>
+    ipcRenderer.invoke('project:create', name),
+  createProjectFromSourceFolder: (): Promise<ProjectState> =>
+    ipcRenderer.invoke('project:createFromSourceFolder'),
+  selectProject: (projectId: string): Promise<ProjectState> =>
+    ipcRenderer.invoke('project:select', projectId),
+  renameProject: (projectId: string, name: string): Promise<ProjectState> =>
+    ipcRenderer.invoke('project:rename', projectId, name),
+  deleteProject: (projectId: string): Promise<ProjectState> =>
+    ipcRenderer.invoke('project:delete', projectId),
+  updateVideoProjectSettings: (patch: Partial<ProjectVideoSettings>): Promise<ProjectState> =>
+    ipcRenderer.invoke('project:updateVideoSettings', patch),
+  updateAudioProjectSettings: (patch: Partial<ProjectAudioSettings>): Promise<ProjectState> =>
+    ipcRenderer.invoke('project:updateAudioSettings', patch),
   openDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:openDirectory'),
   openFile: (extensions: string[]): Promise<string | null> =>
     ipcRenderer.invoke('dialog:openFile', extensions),
