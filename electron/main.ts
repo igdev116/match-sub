@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Store from 'electron-store'
 import sharp from 'sharp'
-import { createAlignment } from './alignment'
+import { createAlignment, previewAlignment } from './alignment'
 import {
   buildSampleVideo,
   buildVideo,
@@ -28,6 +28,8 @@ import type {
   ProjectState,
   ProjectVideoSettings,
   ProjectAudioSettings,
+  ProjectVideoShuffleSettings,
+  VideoShuffleRenameItem,
 } from './types'
 import { readScenes } from './xlsx-reader'
 import {
@@ -73,6 +75,7 @@ const audioExtensions = new Set([
   '.opus',
   '.wma',
 ])
+const videoExtensions = new Set(['.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v'])
 
 function projectRoot(): string {
   return process.env.VITE_DEV_SERVER_URL ? process.cwd() : app.getAppPath()
@@ -292,14 +295,22 @@ function defaultVideoSettings(
 }
 
 function defaultAudioSettings(rootPath: string): ProjectAudioSettings {
+  const audioOutputDirectory = rootPath
   return {
     audioDirectory: existingPath(preferences.get('lastAudioDirectory')),
-    outputPath: path.join(rootPath, 'merged-audio.mp3'),
+    audioOutputDirectory,
+    outputPath: path.join(audioOutputDirectory, 'merged-audio.mp3'),
     pauseSeconds: 1,
     createSrt: true,
     language: 'auto',
     whisperThreads: 4,
     pageSize: 10,
+  }
+}
+
+function defaultVideoShuffleSettings(): ProjectVideoShuffleSettings {
+  return {
+    videoDirectory: '',
   }
 }
 
@@ -314,6 +325,7 @@ function createProjectFromFolder(folderPath: string, activate = true): AppProjec
     updatedAt: timestamp,
     videoSettings: defaultVideoSettings(folderPath, inspection),
     audioSettings: defaultAudioSettings(folderPath),
+    videoShuffleSettings: defaultVideoShuffleSettings(),
     lastSrtPath: inspection.srtPath,
   }
   const projects = [project, ...preferences.get('projects')]
@@ -333,6 +345,7 @@ function createEmptyProject(name: string, activate = true): AppProject {
     updatedAt: timestamp,
     videoSettings: defaultVideoSettings(root, undefined, true),
     audioSettings: defaultAudioSettings(root),
+    videoShuffleSettings: defaultVideoShuffleSettings(),
     lastSrtPath: '',
   }
   const projects = [project, ...preferences.get('projects')]
@@ -362,6 +375,7 @@ function ensureProjectsMigrated(): void {
     updatedAt: timestamp,
     videoSettings: defaultVideoSettings(root, inspection),
     audioSettings: defaultAudioSettings(root),
+    videoShuffleSettings: defaultVideoShuffleSettings(),
     lastSrtPath: inspection.srtPath || existingPath(preferences.get('lastSrtPath')),
   }
   preferences.set('projects', [project])
@@ -370,7 +384,25 @@ function ensureProjectsMigrated(): void {
 
 function getProjectState(): ProjectState {
   ensureProjectsMigrated()
-  const projects = preferences.get('projects')
+  let projects = preferences.get('projects')
+  let normalized = false
+  projects = projects.map((project) => {
+    if (project.audioSettings.audioOutputDirectory && project.videoShuffleSettings) return project
+    normalized = true
+    const outputDirectory = project.audioSettings.outputPath
+      ? path.dirname(project.audioSettings.outputPath)
+      : project.rootPath
+    return {
+      ...project,
+      audioSettings: {
+        ...project.audioSettings,
+        audioOutputDirectory: outputDirectory,
+        outputPath: project.audioSettings.outputPath || path.join(outputDirectory, 'merged-audio.mp3'),
+      },
+      videoShuffleSettings: project.videoShuffleSettings || defaultVideoShuffleSettings(),
+    }
+  })
+  if (normalized) preferences.set('projects', projects)
   const activeProjectId = preferences.get('activeProjectId')
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0] ?? null
   if (activeProject && activeProject.id !== activeProjectId) {
@@ -456,6 +488,96 @@ async function listAudioFiles(directory: string): Promise<AudioFileItem[]> {
     name: fileName(filePath),
     durationSeconds: null,
   }))
+}
+
+async function listVideoFiles(directory: string) {
+  if (!directory || !fs.existsSync(directory)) return []
+  const entries = await fs.promises.readdir(directory, { withFileTypes: true })
+  const files = entries
+    .filter(
+      (entry) =>
+        entry.isFile() && videoExtensions.has(path.extname(entry.name).toLowerCase()),
+    )
+    .map((entry) => path.join(directory, entry.name))
+    .sort(sortByName)
+
+  return Promise.all(
+    files.map(async (filePath) => {
+      const stats = await fs.promises.stat(filePath)
+      return {
+        path: filePath,
+        name: fileName(filePath),
+        extension: path.extname(filePath).toLowerCase(),
+        size: stats.size,
+      }
+    }),
+  )
+}
+
+async function renameVideoFiles(items: VideoShuffleRenameItem[]) {
+  if (items.length === 0) throw new Error('Chưa có video để đổi tên.')
+
+  const normalizedItems = items.map((item) => ({
+    sourcePath: path.resolve(item.path),
+    directory: path.dirname(path.resolve(item.path)),
+    newName: path.basename(item.newName),
+  }))
+  const directory = normalizedItems[0].directory
+  if (normalizedItems.some((item) => item.directory !== directory)) {
+    throw new Error('Chỉ hỗ trợ đổi tên video trong cùng một folder.')
+  }
+
+  const targetPaths = normalizedItems.map((item) => path.resolve(directory, item.newName))
+  const sourcePaths = new Set(normalizedItems.map((item) => item.sourcePath))
+  const targetSet = new Set(targetPaths)
+  if (targetSet.size !== targetPaths.length) throw new Error('Tên mới bị trùng nhau.')
+
+  for (const item of normalizedItems) {
+    if (!fs.existsSync(item.sourcePath)) throw new Error(`Không tìm thấy file: ${path.basename(item.sourcePath)}`)
+    if (!videoExtensions.has(path.extname(item.sourcePath).toLowerCase())) {
+      throw new Error(`File không phải video hỗ trợ: ${path.basename(item.sourcePath)}`)
+    }
+    if (!item.newName || item.newName !== path.basename(item.newName)) {
+      throw new Error('Tên mới không hợp lệ.')
+    }
+  }
+
+  for (const targetPath of targetPaths) {
+    if (fs.existsSync(targetPath) && !sourcePaths.has(targetPath)) {
+      throw new Error(`Tên đích đã tồn tại ngoài batch: ${path.basename(targetPath)}`)
+    }
+  }
+
+  const batchId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const tempItems = normalizedItems.map((item, index) => ({
+    ...item,
+    targetPath: targetPaths[index],
+    tempPath: path.join(directory, `.video-shuffle-${batchId}-${index}${path.extname(item.sourcePath)}`),
+  }))
+
+  const movedToTemp: typeof tempItems = []
+  try {
+    for (const item of tempItems) {
+      fs.renameSync(item.sourcePath, item.tempPath)
+      movedToTemp.push(item)
+    }
+    for (const item of tempItems) {
+      fs.renameSync(item.tempPath, item.targetPath)
+    }
+  } catch (error) {
+    for (const item of movedToTemp.reverse()) {
+      try {
+        if (fs.existsSync(item.tempPath) && !fs.existsSync(item.sourcePath)) {
+          fs.renameSync(item.tempPath, item.sourcePath)
+        }
+      } catch {
+        // Best-effort rollback.
+      }
+    }
+    throw error
+  }
+
+  return { renamed: items.length }
 }
 
 function getProjectDefaults(): ProjectDefaults {
@@ -628,6 +750,17 @@ app.whenReady().then(() => {
     return getProjectState()
   })
 
+  ipcMain.handle(
+    'project:updateVideoShuffleSettings',
+    (_event, patch: Partial<ProjectVideoShuffleSettings>) => {
+      updateActiveProject((project) => ({
+        ...project,
+        videoShuffleSettings: { ...project.videoShuffleSettings, ...patch },
+      }))
+      return getProjectState()
+    },
+  )
+
   ipcMain.handle('dialog:openDirectory', async () => {
     if (!mainWindow) return null
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
@@ -780,6 +913,38 @@ app.whenReady().then(() => {
     files: await listAudioFiles(directory),
   }))
 
+  ipcMain.handle('videoShuffle:selectDirectory', async () => {
+    if (!mainWindow) return null
+    const project = getProjectState().activeProject
+    const result = await dialog.showOpenDialog(mainWindow, {
+      defaultPath: project?.videoShuffleSettings.videoDirectory || project?.rootPath || projectRoot(),
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const directory = result.filePaths[0]
+    try {
+      updateActiveProject((project) => ({
+        ...project,
+        videoShuffleSettings: { ...project.videoShuffleSettings, videoDirectory: directory },
+      }))
+    } catch {
+      // Renderer still receives selected directory when no active project exists.
+    }
+    return {
+      directory,
+      files: await listVideoFiles(directory),
+    }
+  })
+
+  ipcMain.handle('videoShuffle:scanDirectory', async (_event, directory: string) => ({
+    directory,
+    files: await listVideoFiles(directory),
+  }))
+
+  ipcMain.handle('videoShuffle:rename', async (_event, items: VideoShuffleRenameItem[]) =>
+    renameVideoFiles(items),
+  )
+
   ipcMain.handle('audio:getDurations', async (_event, paths: string[]) =>
     Promise.all(
       paths.map(async (filePath) => ({
@@ -812,6 +977,32 @@ app.whenReady().then(() => {
     return result.canceled ? null : result.filePath
   })
 
+  ipcMain.handle('audio:selectOutputDirectory', async (_event, defaultPath?: string) => {
+    if (!mainWindow) return null
+    const project = getProjectState().activeProject
+    const fallbackDirectory =
+      defaultPath || project?.audioSettings.audioOutputDirectory || project?.rootPath || projectRoot()
+    const result = await dialog.showOpenDialog(mainWindow, {
+      defaultPath: fallbackDirectory,
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const directory = result.filePaths[0]
+    try {
+      updateActiveProject((currentProject) => ({
+        ...currentProject,
+        audioSettings: {
+          ...currentProject.audioSettings,
+          audioOutputDirectory: directory,
+          outputPath: path.join(directory, 'merged-audio.mp3'),
+        },
+      }))
+    } catch {
+      // Renderer still receives the selected directory when no project exists.
+    }
+    return directory
+  })
+
   ipcMain.handle('shell:showInFolder', async (_event, targetPath: string) => {
     if (!targetPath) return false
     if (fs.existsSync(targetPath)) {
@@ -829,7 +1020,7 @@ app.whenReady().then(() => {
   ipcMain.handle('preview:srt', (_event, filePath: string) => parseSrt(filePath))
   ipcMain.handle('preview:images', (_event, directory: string) => previewImages(directory))
   ipcMain.handle('preview:thumbnail', (_event, filePath: string) => getThumbnail(filePath))
-  ipcMain.handle('preview:alignment', (_event, config: PreviewConfig) => createAlignment(config))
+  ipcMain.handle('preview:alignment', (_event, config: PreviewConfig) => previewAlignment(config))
   ipcMain.handle('build:stop', () => stopBuild())
   ipcMain.handle('build:sample', async (_event, config: SampleBuildConfig) => {
     if (building) throw new Error('Một tiến trình build khác đang chạy.')

@@ -4,6 +4,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ProjectOutlined,
+  SwapOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons'
 import { Button, Layout, Menu, Typography } from 'antd'
@@ -13,7 +14,7 @@ import { useSettingsStore } from '../stores/useSettingsStore'
 
 const { Header, Content, Sider } = Layout
 
-export type AppToolKey = 'video-builder' | 'audio-merge'
+export type AppToolKey = 'video-builder' | 'audio-merge' | 'video-shuffle'
 export type AppMenuKey = 'project-manager' | `project:${string}:${AppToolKey}`
 
 interface AppShellProps {
@@ -64,6 +65,11 @@ export default function AppShell({
             key: `project:${project.id}:audio-merge`,
             icon: <AudioOutlined />,
             label: 'Ghép audio',
+          },
+          {
+            key: `project:${project.id}:video-shuffle`,
+            icon: <SwapOutlined />,
+            label: 'Xáo video',
           },
         ],
       })),

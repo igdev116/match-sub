@@ -5,6 +5,7 @@ import AppShell, { type AppMenuKey } from './layouts/AppShell'
 import AudioMergePage from './pages/AudioMergePage'
 import BuildPage from './pages/BuildPage'
 import ProjectPage from './pages/ProjectPage'
+import VideoShufflePage from './pages/VideoShufflePage'
 import { useProjectStore } from './stores/useProjectStore'
 import type { AppToolKey } from './layouts/AppShell'
 
@@ -13,7 +14,7 @@ function projectMenuKey(projectId: string, tool: AppToolKey): AppMenuKey {
 }
 
 function parseProjectMenuKey(key: AppMenuKey): { projectId: string; tool: AppToolKey } | null {
-  const match = key.match(/^project:(.+):(video-builder|audio-merge)$/)
+  const match = key.match(/^project:(.+):(video-builder|audio-merge|video-shuffle)$/)
   if (!match) return null
   return { projectId: match[1], tool: match[2] as AppToolKey }
 }
@@ -93,6 +94,11 @@ export default function App() {
           {activeProject && visitedMenus.has(activeMenu) && activeTool === 'audio-merge' && (
             <div className="block">
               <AudioMergePage key={activeProject.id} />
+            </div>
+          )}
+          {activeProject && visitedMenus.has(activeMenu) && activeTool === 'video-shuffle' && (
+            <div className="block">
+              <VideoShufflePage key={activeProject.id} />
             </div>
           )}
           {loadingProjects && null}

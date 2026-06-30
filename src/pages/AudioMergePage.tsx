@@ -39,7 +39,6 @@ import {
   HolderOutlined,
   PlusOutlined,
   ReloadOutlined,
-  SaveOutlined,
 } from '@ant-design/icons'
 import type { AudioFileItem, WhisperProgress, WhisperStatus } from '../../electron/types'
 import { useProjectStore } from '../stores/useProjectStore'
@@ -62,6 +61,12 @@ function formatDuration(seconds: number | null): string {
 function cleanError(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error)
   return text.replace(/^Error invoking remote method '[^']+': Error: /, '')
+}
+
+function audioOutputPath(directory: string): string {
+  if (!directory) return ''
+  const separator = directory.includes('\\') ? '\\' : '/'
+  return `${directory.replace(/[\\/]+$/, '')}${separator}merged-audio.mp3`
 }
 
 function SortableAudioItem({
@@ -136,6 +141,7 @@ export default function AudioMergePage() {
   const activeProject = useProjectStore((state) => state.activeProject)
   const updateAudioSettings = useProjectStore((state) => state.updateAudioSettings)
   const audioSettings = activeProject?.audioSettings
+  const audioOutputDirectory = audioSettings?.audioOutputDirectory ?? ''
   const pageSize = audioSettings?.pageSize ?? 10
   const pauseSeconds = audioSettings?.pauseSeconds ?? 1
   const createSrt = audioSettings?.createSrt ?? true
@@ -160,7 +166,7 @@ export default function AudioMergePage() {
   useEffect(() => {
     if (!audioSettings) return
     setAudioDirectory(audioSettings.audioDirectory)
-    setOutputPath(audioSettings.outputPath)
+    setOutputPath(audioSettings.outputPath || audioOutputPath(audioSettings.audioOutputDirectory))
     setItems([])
     setCurrentPage(1)
     durationRequestedPaths.current.clear()
@@ -310,11 +316,15 @@ export default function AudioMergePage() {
     }
   }
 
-  async function chooseOutput() {
-    const selected = await window.videoBuilder.saveAudio(outputPath)
+  async function chooseOutputDirectory() {
+    const selected = await window.videoBuilder.selectAudioOutputDirectory(audioOutputDirectory)
     if (selected) {
-      setOutputPath(selected)
-      saveAudioSettings({ outputPath: selected })
+      const nextOutputPath = audioOutputPath(selected)
+      setOutputPath(nextOutputPath)
+      saveAudioSettings({
+        audioOutputDirectory: selected,
+        outputPath: nextOutputPath,
+      })
     }
   }
 
@@ -536,10 +546,17 @@ export default function AudioMergePage() {
               >
                 Mở thư mục
               </Button>
-              <Button icon={<SaveOutlined />} disabled={processing} onClick={chooseOutput}>
-                Chọn nơi lưu
+              <Button
+                icon={<FolderOpenOutlined />}
+                disabled={processing}
+                onClick={() => void chooseOutputDirectory()}
+              >
+                Chọn folder lưu
               </Button>
             </Space.Compact>
+            <Typography.Text type="secondary" className="mt-2 block text-xs">
+              App sẽ lưu mặc định file merged-audio.mp3 trong folder đã chọn.
+            </Typography.Text>
           </div>
         </div>
       </Card>

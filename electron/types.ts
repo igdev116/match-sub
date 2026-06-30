@@ -78,12 +78,17 @@ export interface ProjectVideoSettings {
 
 export interface ProjectAudioSettings {
   audioDirectory: string
+  audioOutputDirectory: string
   outputPath: string
   pauseSeconds: number
   createSrt: boolean
   language: string
   whisperThreads: number
   pageSize: number
+}
+
+export interface ProjectVideoShuffleSettings {
+  videoDirectory: string
 }
 
 export interface AppProject {
@@ -94,6 +99,7 @@ export interface AppProject {
   updatedAt: string
   videoSettings: ProjectVideoSettings
   audioSettings: ProjectAudioSettings
+  videoShuffleSettings: ProjectVideoShuffleSettings
   lastSrtPath: string
 }
 
@@ -111,6 +117,11 @@ export interface AlignmentItem {
   startSeconds: number
   duration: number
   srtEntries: SrtEntry[]
+}
+
+export interface AlignmentPreviewResult {
+  items: AlignmentItem[]
+  warnings: string[]
 }
 
 export interface PreviewConfig {
@@ -184,6 +195,22 @@ export interface AudioFileItem {
   path: string
   name: string
   durationSeconds: number | null
+}
+
+export interface VideoShuffleFileItem {
+  path: string
+  name: string
+  extension: string
+  size: number
+}
+
+export interface VideoShuffleRenameItem {
+  path: string
+  newName: string
+}
+
+export interface VideoShuffleRenameResult {
+  renamed: number
 }
 
 export interface WhisperStatus {

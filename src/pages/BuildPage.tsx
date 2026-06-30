@@ -18,6 +18,7 @@ import {
   FolderOpenOutlined,
   PictureOutlined,
   PlayCircleOutlined,
+  ReloadOutlined,
   SaveOutlined,
   ScanOutlined,
   VideoCameraAddOutlined,
@@ -62,6 +63,18 @@ function formatPathMeta(info?: PathInfo): string {
   return `Cập nhật: ${dayjs(timestamp).format('DD/MM/YYYY HH:mm')} (${dayjs(timestamp).fromNow()})`
 }
 
+function dirname(filePath: string): string {
+  const normalized = filePath.replace(/[\\/]+$/, '')
+  const separatorIndex = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'))
+  return separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : ''
+}
+
+function joinPath(directory: string, filename: string): string {
+  if (!directory) return filename
+  const separator = directory.includes('\\') ? '\\' : '/'
+  return `${directory.replace(/[\\/]+$/, '')}${separator}${filename}`
+}
+
 export default function BuildPage() {
   const { message } = App.useApp()
   const [imagesDirectory, setImagesDirectory] = useState('')
@@ -102,6 +115,7 @@ export default function BuildPage() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [alignment, setAlignment] = useState<AlignmentItem[]>([])
+  const [alignmentWarnings, setAlignmentWarnings] = useState<string[]>([])
   const [progressOpen, setProgressOpen] = useState(false)
   const [progress, setProgress] = useState<BuildProgressState | null>(null)
   const [building, setBuilding] = useState(false)
@@ -168,15 +182,27 @@ export default function BuildPage() {
     () => ({ imagesDirectory, sceneListPath, srtPath }),
     [imagesDirectory, sceneListPath, srtPath],
   )
+  const outputDisplayPath = mode === 'clips' ? dirname(outputPath) : outputPath
 
-  function applySourceInspection(inspection: SourceFolderInspection) {
+  function applySourceInspection(
+    inspection: SourceFolderInspection,
+    options: { preserveOutput?: boolean } = {},
+  ) {
     setSourceFolder(inspection.folderPath)
     setImagesDirectory(inspection.imagesDirectory)
     setSceneListPath(inspection.sceneListPath)
     setSrtPath(inspection.srtPath)
-    setOutputPath(inspection.outputPath)
-    setSourceInfos(inspection.infos)
-    setSourceErrors(inspection.errors)
+    if (!options.preserveOutput) setOutputPath(inspection.outputPath)
+    setSourceInfos((current) => ({
+      ...inspection.infos,
+      outputPath: options.preserveOutput ? current.outputPath : inspection.infos.outputPath,
+    }))
+    setSourceErrors((current) => {
+      if (!options.preserveOutput) return inspection.errors
+      const next = { ...inspection.errors }
+      if (current.outputPath) next.outputPath = current.outputPath
+      return next
+    })
   }
 
   function saveVideoSettings(patch: Parameters<typeof updateVideoSettings>[0]) {
@@ -242,6 +268,17 @@ export default function BuildPage() {
   }
 
   async function chooseOutput() {
+    if (mode === 'clips') {
+      const result = await window.videoBuilder.openDirectory()
+      if (result) {
+        const nextOutputPath = joinPath(result, 'output.mp4')
+        setOutputPath(nextOutputPath)
+        await updatePathInfo('outputPath', result)
+        saveVideoSettings({ outputPath: nextOutputPath })
+      }
+      return
+    }
+
     const result = await window.videoBuilder.saveFile(outputPath)
     if (result) {
       setOutputPath(result)
@@ -268,6 +305,34 @@ export default function BuildPage() {
         message.warning(`Đã đọc folder nguồn, còn thiếu ${missingCount} mục.`)
       } else {
         message.success('Đã tự nhận diện đủ nguồn dữ liệu.')
+      }
+    } catch (error) {
+      message.error(cleanError(error), 6)
+    } finally {
+      setSourceInspecting(false)
+    }
+  }
+
+  async function refreshSourceFolder() {
+    if (!sourceFolder) {
+      message.warning('Chưa chọn folder nguồn.')
+      return
+    }
+    setSourceInspecting(true)
+    try {
+      const result = await window.videoBuilder.inspectSourceFolder(sourceFolder)
+      applySourceInspection(result, { preserveOutput: true })
+      saveVideoSettings({
+        sourceFolderPath: result.folderPath,
+        imagesDirectory: result.imagesDirectory,
+        sceneListPath: result.sceneListPath,
+        srtPath: result.srtPath,
+      })
+      const missingCount = Object.keys(result.errors).length
+      if (missingCount > 0) {
+        message.warning(`Đã làm mới folder nguồn, còn thiếu ${missingCount} mục.`)
+      } else {
+        message.success('Đã làm mới folder nguồn.')
       }
     } catch (error) {
       message.error(cleanError(error), 6)
@@ -339,9 +404,12 @@ export default function BuildPage() {
     setPreviewOpen(true)
     setPreviewLoading(true)
     try {
-      setAlignment(await window.videoBuilder.previewAlignment(previewConfig))
+      const result = await window.videoBuilder.previewAlignment(previewConfig)
+      setAlignment(result.items)
+      setAlignmentWarnings(result.warnings)
     } catch (error) {
       setPreviewOpen(false)
+      setAlignmentWarnings([])
       message.error(cleanError(error), 6)
     } finally {
       setPreviewLoading(false)
@@ -419,14 +487,24 @@ export default function BuildPage() {
             className="shadow-sm"
             title="Nguồn dữ liệu"
             extra={
-              <Button
-                icon={<FolderOpenOutlined />}
-                loading={sourceInspecting}
-                disabled={busy}
-                onClick={() => void chooseSourceFolder()}
-              >
-                Chọn folder nguồn
-              </Button>
+              <Space>
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={sourceInspecting}
+                  disabled={busy || !sourceFolder}
+                  onClick={() => void refreshSourceFolder()}
+                >
+                  Làm mới
+                </Button>
+                <Button
+                  icon={<FolderOpenOutlined />}
+                  loading={sourceInspecting}
+                  disabled={busy}
+                  onClick={() => void chooseSourceFolder()}
+                >
+                  Chọn folder nguồn
+                </Button>
+              </Space>
             }
           >
             <div className="space-y-4">
@@ -476,11 +554,15 @@ export default function BuildPage() {
                 metaText={formatPathMeta(sourceInfos.srtPath)}
               />
               <FileSelector
-                label="Output"
-                value={outputPath}
-                placeholder="Chọn nơi lưu output.mp4"
-                icon={<SaveOutlined className="text-amber-600" />}
-                buttonLabel="Chọn nơi lưu"
+                label={mode === 'clips' ? 'Thư mục lưu clips' : 'Output'}
+                value={outputDisplayPath}
+                placeholder={mode === 'clips' ? 'Chọn folder để lưu nhiều video' : 'Chọn nơi lưu output.mp4'}
+                icon={
+                  mode === 'clips'
+                    ? <FolderOpenOutlined className="text-amber-600" />
+                    : <SaveOutlined className="text-amber-600" />
+                }
+                buttonLabel={mode === 'clips' ? 'Chọn folder' : 'Chọn nơi lưu'}
                 onSelect={chooseOutput}
                 disabled={busy}
                 status={sourceErrors.outputPath ? 'error' : undefined}
@@ -746,6 +828,7 @@ export default function BuildPage() {
         open={previewOpen}
         loading={previewLoading}
         items={alignment}
+        warnings={alignmentWarnings}
         motionEffect={motionEffect}
         motionZoomPercent={motionZoomPercent}
         motionHoldMode={motionHoldMode}

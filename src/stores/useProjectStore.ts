@@ -3,6 +3,7 @@ import type {
   AppProject,
   ProjectAudioSettings,
   ProjectState,
+  ProjectVideoShuffleSettings,
   ProjectVideoSettings,
 } from '../../electron/types'
 
@@ -20,6 +21,7 @@ interface ProjectStoreState {
   deleteProject: (projectId: string) => Promise<ProjectState>
   updateVideoSettings: (patch: Partial<ProjectVideoSettings>) => Promise<ProjectState>
   updateAudioSettings: (patch: Partial<ProjectAudioSettings>) => Promise<ProjectState>
+  updateVideoShuffleSettings: (patch: Partial<ProjectVideoShuffleSettings>) => Promise<ProjectState>
 }
 
 export const useProjectStore = create<ProjectStoreState>((set) => {
@@ -54,5 +56,7 @@ export const useProjectStore = create<ProjectStoreState>((set) => {
       apply(await window.videoBuilder.updateVideoProjectSettings(patch)),
     updateAudioSettings: async (patch) =>
       apply(await window.videoBuilder.updateAudioProjectSettings(patch)),
+    updateVideoShuffleSettings: async (patch) =>
+      apply(await window.videoBuilder.updateVideoShuffleProjectSettings(patch)),
   }
 })

@@ -1,4 +1,4 @@
-import { Descriptions, Empty, Modal, Table, Tag, Typography } from 'antd'
+import { Alert, Descriptions, Empty, Modal, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { AlignmentItem, BuildConfig } from '../../electron/types'
 import ThumbnailImage from './ThumbnailImage'
@@ -7,6 +7,7 @@ interface AlignmentPreviewProps {
   open: boolean
   loading: boolean
   items: AlignmentItem[]
+  warnings: string[]
   motionEffect: BuildConfig['motionEffect']
   motionZoomPercent: number
   motionHoldMode: NonNullable<BuildConfig['motionHoldMode']>
@@ -51,6 +52,7 @@ export default function AlignmentPreview({
   open,
   loading,
   items,
+  warnings,
   motionEffect,
   motionZoomPercent,
   motionHoldMode,
@@ -201,6 +203,21 @@ export default function AlignmentPreview({
           },
         ]}
       />
+      {warnings.length > 0 && (
+        <Alert
+          className="mb-4"
+          type="warning"
+          showIcon
+          message="Cảnh báo alignment"
+          description={
+            <ul className="m-0 pl-5">
+              {warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          }
+        />
+      )}
       <Table
         rowKey="sceneNumber"
         columns={columns}

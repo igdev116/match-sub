@@ -2,7 +2,7 @@
 
 import type {
   AudioFileItem,
-  AlignmentItem,
+  AlignmentPreviewResult,
   AudioMergeConfig,
   BuildConfig,
   BuildProgress,
@@ -17,8 +17,12 @@ import type {
   ProjectState,
   ProjectVideoSettings,
   ProjectAudioSettings,
+  ProjectVideoShuffleSettings,
   WhisperProgress,
   WhisperStatus,
+  VideoShuffleFileItem,
+  VideoShuffleRenameItem,
+  VideoShuffleRenameResult,
 } from '../electron/types'
 
 declare global {
@@ -32,6 +36,9 @@ declare global {
       deleteProject: (projectId: string) => Promise<ProjectState>
       updateVideoProjectSettings: (patch: Partial<ProjectVideoSettings>) => Promise<ProjectState>
       updateAudioProjectSettings: (patch: Partial<ProjectAudioSettings>) => Promise<ProjectState>
+      updateVideoShuffleProjectSettings: (
+        patch: Partial<ProjectVideoShuffleSettings>,
+      ) => Promise<ProjectState>
       openDirectory: () => Promise<string | null>
       openFile: (extensions: string[]) => Promise<string | null>
       openFiles: (extensions: string[]) => Promise<AudioFileItem[]>
@@ -49,6 +56,7 @@ declare global {
       ) => Promise<{ path: string; durationSeconds: number | null }[]>
       saveFile: (defaultPath?: string) => Promise<string | null>
       saveAudio: (defaultPath?: string) => Promise<string | null>
+      selectAudioOutputDirectory: (defaultPath?: string) => Promise<string | null>
       showInFolder: (path: string) => Promise<boolean>
       getDefaults: () => Promise<ProjectDefaults>
       checkFFmpeg: () => Promise<{ available: boolean; version?: string }>
@@ -56,11 +64,21 @@ declare global {
       previewSrt: (path: string) => Promise<SrtEntry[]>
       previewImages: (path: string) => Promise<ImagePreviewItem[]>
       getThumbnail: (path: string) => Promise<string>
-      previewAlignment: (config: PreviewConfig) => Promise<AlignmentItem[]>
+      previewAlignment: (config: PreviewConfig) => Promise<AlignmentPreviewResult>
       startBuild: (config: BuildConfig) => Promise<{ success: boolean }>
       buildSampleVideo: (config: SampleBuildConfig) => Promise<string>
       stopBuild: () => Promise<boolean>
       mergeAudio: (config: AudioMergeConfig) => Promise<void>
+      selectVideoShuffleDirectory: () => Promise<{
+        directory: string
+        files: VideoShuffleFileItem[]
+      } | null>
+      scanVideoShuffleDirectory: (
+        directory: string,
+      ) => Promise<{ directory: string; files: VideoShuffleFileItem[] }>
+      renameVideoShuffleFiles: (
+        items: VideoShuffleRenameItem[],
+      ) => Promise<VideoShuffleRenameResult>
       getWhisperStatus: () => Promise<WhisperStatus>
       installWhisper: () => Promise<void>
       downloadWhisperModel: () => Promise<void>

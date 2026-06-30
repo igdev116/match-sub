@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { alignScenesToSrt } from './dp-align'
 import { parseSrt, timeToSeconds } from './srt-parser'
-import type { AlignmentItem, PreviewConfig } from './types'
+import type { AlignmentItem, AlignmentPreviewResult, PreviewConfig, Scene, SrtEntry } from './types'
 import { readScenes } from './xlsx-reader'
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp'])
@@ -20,9 +20,23 @@ export function findImage(directory: string, sceneNumber: number): string | null
   return candidates[0] ? path.join(directory, candidates[0]) : null
 }
 
-export function createAlignment(config: PreviewConfig): AlignmentItem[] {
-  const scenes = readScenes(config.sceneListPath)
-  const srtEntries = parseSrt(config.srtPath)
+function listImageSceneNumbers(directory: string): number[] {
+  if (!fs.existsSync(directory)) return []
+  return fs
+    .readdirSync(directory)
+    .map((name) => {
+      if (!IMAGE_EXTENSIONS.has(path.extname(name).toLowerCase())) return null
+      const match = path.basename(name, path.extname(name)).match(/^(\d+)/)
+      return match ? Number(match[1]) : null
+    })
+    .filter((sceneNumber): sceneNumber is number => Number.isFinite(sceneNumber))
+}
+
+function createAlignmentItems(
+  scenes: Scene[],
+  srtEntries: SrtEntry[],
+  config: PreviewConfig,
+): AlignmentItem[] {
   if (srtEntries.length === 0) throw new Error('Không đọc được entry nào từ file SRT.')
 
   const assignments = alignScenesToSrt(
@@ -49,4 +63,66 @@ export function createAlignment(config: PreviewConfig): AlignmentItem[] {
       srtEntries: entries,
     }
   })
+}
+
+function compactSceneList(sceneNumbers: number[]): string {
+  const firstNumbers = sceneNumbers.slice(0, 12).map((number) => `#${number}`).join(', ')
+  return sceneNumbers.length > 12 ? `${firstNumbers}, ...` : firstNumbers
+}
+
+export function createAlignment(config: PreviewConfig): AlignmentItem[] {
+  const scenes = readScenes(config.sceneListPath)
+  const srtEntries = parseSrt(config.srtPath)
+  return createAlignmentItems(scenes, srtEntries, config)
+}
+
+export function previewAlignment(config: PreviewConfig): AlignmentPreviewResult {
+  const scenes = readScenes(config.sceneListPath)
+  const srtEntries = parseSrt(config.srtPath)
+  const items = createAlignmentItems(scenes, srtEntries, config)
+  const assignments = alignScenesToSrt(
+    scenes.map((scene) => scene.content),
+    srtEntries,
+  )
+  const warnings: string[] = []
+  const missingImageScenes = items
+    .filter((item) => !item.imagePath)
+    .map((item) => item.sceneNumber)
+
+  if (missingImageScenes.length > 0) {
+    warnings.push(
+      `Thiếu ảnh cho ${missingImageScenes.length}/${items.length} scene: ${compactSceneList(missingImageScenes)}.`,
+    )
+  }
+
+  const imageSceneNumbers = listImageSceneNumbers(config.imagesDirectory)
+  if (imageSceneNumbers.length > 0 && imageSceneNumbers.length < scenes.length) {
+    warnings.push(`Thư mục ảnh có ${imageSceneNumbers.length} ảnh đánh số, ít hơn ${scenes.length} scene.`)
+  }
+  if (imageSceneNumbers.length > scenes.length) {
+    warnings.push(`Thư mục ảnh có ${imageSceneNumbers.length} ảnh đánh số, nhiều hơn ${scenes.length} scene.`)
+  }
+
+  const emptySrtScenes = items
+    .filter((item) => item.srtEntries.length === 0)
+    .map((item) => item.sceneNumber)
+  if (emptySrtScenes.length > 0) {
+    warnings.push(`Có ${emptySrtScenes.length} scene chưa map được SRT: ${compactSceneList(emptySrtScenes)}.`)
+  }
+
+  const lowConfidenceScenes = assignments
+    .filter((assignment) => assignment.score < 0.18)
+    .map((assignment) => scenes[assignment.sceneIndex]?.number)
+    .filter((sceneNumber): sceneNumber is number => Number.isFinite(sceneNumber))
+  if (lowConfidenceScenes.length > 0) {
+    warnings.push(
+      `Có ${lowConfidenceScenes.length} scene có SRT tương ứng độ khớp thấp: ${compactSceneList(lowConfidenceScenes)}.`,
+    )
+  }
+
+  if (srtEntries.length >= scenes.length * 3) {
+    warnings.push(`SRT có ${srtEntries.length} entries cho ${scenes.length} scene. Hãy kiểm tra nếu timing bị chia quá nhỏ.`)
+  }
+
+  return { items, warnings }
 }

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AlignmentPreviewResult,
   AudioFileItem,
   AudioMergeConfig,
   BuildConfig,
@@ -11,6 +12,10 @@ import type {
   ProjectState,
   ProjectVideoSettings,
   ProjectAudioSettings,
+  ProjectVideoShuffleSettings,
+  VideoShuffleFileItem,
+  VideoShuffleRenameItem,
+  VideoShuffleRenameResult,
   WhisperProgress,
 } from './types'
 
@@ -30,6 +35,9 @@ contextBridge.exposeInMainWorld('videoBuilder', {
     ipcRenderer.invoke('project:updateVideoSettings', patch),
   updateAudioProjectSettings: (patch: Partial<ProjectAudioSettings>): Promise<ProjectState> =>
     ipcRenderer.invoke('project:updateAudioSettings', patch),
+  updateVideoShuffleProjectSettings: (
+    patch: Partial<ProjectVideoShuffleSettings>,
+  ): Promise<ProjectState> => ipcRenderer.invoke('project:updateVideoShuffleSettings', patch),
   openDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:openDirectory'),
   openFile: (extensions: string[]): Promise<string | null> =>
     ipcRenderer.invoke('dialog:openFile', extensions),
@@ -63,6 +71,8 @@ contextBridge.exposeInMainWorld('videoBuilder', {
     ipcRenderer.invoke('dialog:saveFile', defaultPath),
   saveAudio: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveAudio', defaultPath),
+  selectAudioOutputDirectory: (defaultPath?: string): Promise<string | null> =>
+    ipcRenderer.invoke('audio:selectOutputDirectory', defaultPath),
   showInFolder: (path: string): Promise<boolean> =>
     ipcRenderer.invoke('shell:showInFolder', path),
   getDefaults: () => ipcRenderer.invoke('app:defaults'),
@@ -71,12 +81,25 @@ contextBridge.exposeInMainWorld('videoBuilder', {
   previewSrt: (path: string) => ipcRenderer.invoke('preview:srt', path),
   previewImages: (path: string) => ipcRenderer.invoke('preview:images', path),
   getThumbnail: (path: string) => ipcRenderer.invoke('preview:thumbnail', path),
-  previewAlignment: (config: PreviewConfig) => ipcRenderer.invoke('preview:alignment', config),
+  previewAlignment: (config: PreviewConfig): Promise<AlignmentPreviewResult> =>
+    ipcRenderer.invoke('preview:alignment', config),
   startBuild: (config: BuildConfig) => ipcRenderer.invoke('build:start', config),
   buildSampleVideo: (config: SampleBuildConfig): Promise<string> =>
     ipcRenderer.invoke('build:sample', config),
   stopBuild: () => ipcRenderer.invoke('build:stop'),
   mergeAudio: (config: AudioMergeConfig) => ipcRenderer.invoke('audio:merge', config),
+  selectVideoShuffleDirectory: () =>
+    ipcRenderer.invoke('videoShuffle:selectDirectory') as Promise<{
+      directory: string
+      files: VideoShuffleFileItem[]
+    } | null>,
+  scanVideoShuffleDirectory: (directory: string) =>
+    ipcRenderer.invoke('videoShuffle:scanDirectory', directory) as Promise<{
+      directory: string
+      files: VideoShuffleFileItem[]
+    }>,
+  renameVideoShuffleFiles: (items: VideoShuffleRenameItem[]): Promise<VideoShuffleRenameResult> =>
+    ipcRenderer.invoke('videoShuffle:rename', items),
   getWhisperStatus: () => ipcRenderer.invoke('whisper:status'),
   installWhisper: () => ipcRenderer.invoke('whisper:install'),
   downloadWhisperModel: () => ipcRenderer.invoke('whisper:downloadModel'),
