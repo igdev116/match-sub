@@ -19,9 +19,46 @@ type PerformanceSettings = {
   scaleFlags: 'bilinear' | 'bicubic' | 'lanczos'
   threads: number
 }
+type MotionEffect = BuildConfig['motionEffect']
 
 const activeProcesses = new Set<ChildProcess>()
 let stopRequested = false
+
+const automaticEffects: MotionEffect[] = [
+  'zoom-right',
+  'zoom-left',
+  'zoom-center',
+  'zoom-up',
+  'zoom-down',
+  'zoom-out',
+]
+const alternatingTopCornerEffects: MotionEffect[] = ['zoom-top-right', 'zoom-top-left']
+const reversedAlternatingTopCornerEffects: MotionEffect[] = ['zoom-top-left', 'zoom-top-right']
+const alternatingCornerInOutEffects: MotionEffect[] = [
+  'zoom-top-left',
+  'zoom-out-top-left',
+  'zoom-top-right',
+  'zoom-out-top-right',
+]
+
+function resolveMotionEffect(config: Pick<BuildConfig, 'motionEffect' | 'motionSequence'>, index: number): MotionEffect {
+  const sequence = config.motionSequence?.filter((item) => item.effect)
+  const effect = sequence?.length
+    ? sequence[index % sequence.length].effect
+    : config.motionEffect ?? 'zoom-right'
+
+  if (effect === 'auto') return automaticEffects[index % automaticEffects.length]
+  if (effect === 'alternate-top-corners') {
+    return alternatingTopCornerEffects[index % alternatingTopCornerEffects.length]
+  }
+  if (effect === 'alternate-top-corners-reverse') {
+    return reversedAlternatingTopCornerEffects[index % reversedAlternatingTopCornerEffects.length]
+  }
+  if (effect === 'alternate-corner-in-out') {
+    return alternatingCornerInOutEffects[index % alternatingCornerInOutEffects.length]
+  }
+  return effect
+}
 
 function run(command: string, args: string[], onLog?: (line: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -129,6 +166,7 @@ function sceneArgs(
   fps: number,
   motionEffect: BuildConfig['motionEffect'],
   motionZoomPercent: number,
+  motionZoomOutStartPercent: number,
   motionHoldMode: BuildConfig['motionHoldMode'],
   motionHoldPercent: number,
   motionHoldSeconds: number,
@@ -180,8 +218,9 @@ function sceneArgs(
     `(${linearProgress})*(${linearProgress})*` +
     `(3-2*(${linearProgress}))`
   const zoomAmount = motionZoomPercent / 100
+  const zoomOutAmount = motionZoomOutStartPercent / 100
   const zoomIn = `1+${zoomAmount}*${progress}`
-  const zoomOut = `${1 + zoomAmount}-${zoomAmount}*${progress}`
+  const zoomOut = `${1 + zoomOutAmount}-${zoomOutAmount}*${progress}`
 
   const motionExpressions: Partial<
     Record<BuildConfig['motionEffect'], { z: string; x: string; y: string }>
@@ -225,6 +264,16 @@ function sceneArgs(
       z: zoomOut,
       x: '(iw-iw/zoom)/2',
       y: '(ih-ih/zoom)/2',
+    },
+    'zoom-out-top-left': {
+      z: zoomOut,
+      x: '0',
+      y: '0',
+    },
+    'zoom-out-top-right': {
+      z: zoomOut,
+      x: 'iw-iw/zoom',
+      y: '0',
     },
   }
   const motion = motionExpressions[motionEffect]
@@ -272,6 +321,14 @@ export async function buildVideo(
     motionZoomPercent > 50
   ) {
     throw new Error('Mức zoom phải từ 0% đến 50%.')
+  }
+  const motionZoomOutStartPercent = config.motionZoomOutStartPercent ?? 12
+  if (
+    !Number.isFinite(motionZoomOutStartPercent) ||
+    motionZoomOutStartPercent < 0 ||
+    motionZoomOutStartPercent > 50
+  ) {
+    throw new Error('Mức zoom khởi tạo khi thu nhỏ phải từ 0% đến 50%.')
   }
   const motionHoldPercent = config.motionHoldPercent ?? 20
   const motionHoldMode = config.motionHoldMode ?? 'percent'
@@ -339,22 +396,6 @@ export async function buildVideo(
     const clipPaths = alignment.map((item) =>
       path.join(clipsDirectory, `${String(item.sceneNumber).padStart(3, '0')}.mp4`),
     )
-    const automaticEffects: BuildConfig['motionEffect'][] = [
-      'zoom-right',
-      'zoom-left',
-      'zoom-center',
-      'zoom-up',
-      'zoom-down',
-      'zoom-out',
-    ]
-    const alternatingTopCornerEffects: BuildConfig['motionEffect'][] = [
-      'zoom-top-right',
-      'zoom-top-left',
-    ]
-    const reversedAlternatingTopCornerEffects: BuildConfig['motionEffect'][] = [
-      'zoom-top-left',
-      'zoom-top-right',
-    ]
     let nextIndex = 0
     let completedScenes = 0
     const maxEncodePercent = config.mode === 'full' ? 90 : 100
@@ -383,16 +424,9 @@ export async function buildVideo(
               width,
               height,
               config.fps,
-              config.motionEffect === 'auto'
-                ? automaticEffects[index % automaticEffects.length]
-                : config.motionEffect === 'alternate-top-corners'
-                  ? alternatingTopCornerEffects[index % alternatingTopCornerEffects.length]
-                  : config.motionEffect === 'alternate-top-corners-reverse'
-                    ? reversedAlternatingTopCornerEffects[
-                        index % reversedAlternatingTopCornerEffects.length
-                      ]
-                    : config.motionEffect ?? 'zoom-right',
+              resolveMotionEffect(config, index),
               motionZoomPercent,
+              motionZoomOutStartPercent,
               motionHoldMode,
               motionHoldPercent,
               motionHoldSeconds,
@@ -494,6 +528,14 @@ export async function buildSampleVideo(config: SampleBuildConfig): Promise<strin
   ) {
     throw new Error('Mức zoom phải từ 0% đến 50%.')
   }
+  const motionZoomOutStartPercent = config.motionZoomOutStartPercent ?? 12
+  if (
+    !Number.isFinite(motionZoomOutStartPercent) ||
+    motionZoomOutStartPercent < 0 ||
+    motionZoomOutStartPercent > 50
+  ) {
+    throw new Error('Mức zoom khởi tạo khi thu nhỏ phải từ 0% đến 50%.')
+  }
   if (
     !Number.isFinite(config.motionHoldPercent) ||
     config.motionHoldPercent < 0 ||
@@ -533,12 +575,7 @@ export async function buildSampleVideo(config: SampleBuildConfig): Promise<strin
 
   stopRequested = false
   fs.mkdirSync(path.dirname(config.outputPath), { recursive: true })
-  const effect =
-    config.motionEffect === 'auto' ||
-    config.motionEffect === 'alternate-top-corners' ||
-    config.motionEffect === 'alternate-top-corners-reverse'
-      ? 'zoom-top-right'
-      : config.motionEffect
+  const effect = resolveMotionEffect(config, 0)
   const item: AlignmentItem = {
     sceneNumber: 1,
     sceneContent: 'Motion preview',
@@ -558,6 +595,7 @@ export async function buildSampleVideo(config: SampleBuildConfig): Promise<strin
       config.fps,
       effect,
       config.motionZoomPercent,
+      motionZoomOutStartPercent,
       motionHoldMode,
       config.motionHoldPercent,
       motionHoldSeconds,

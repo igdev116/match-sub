@@ -1,6 +1,6 @@
 import { Alert, Descriptions, Empty, Modal, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import type { AlignmentItem, BuildConfig } from '../../electron/types'
+import type { AlignmentItem, BuildConfig, MotionSequenceItem } from '../../electron/types'
 import ThumbnailImage from './ThumbnailImage'
 
 interface AlignmentPreviewProps {
@@ -9,7 +9,9 @@ interface AlignmentPreviewProps {
   items: AlignmentItem[]
   warnings: string[]
   motionEffect: BuildConfig['motionEffect']
+  motionSequence: MotionSequenceItem[]
   motionZoomPercent: number
+  motionZoomOutStartPercent: number
   motionHoldMode: NonNullable<BuildConfig['motionHoldMode']>
   motionHoldPercent: number
   motionHoldSeconds: number
@@ -32,6 +34,12 @@ const reversedAlternatingTopCornerEffects: BuildConfig['motionEffect'][] = [
   'zoom-top-left',
   'zoom-top-right',
 ]
+const alternatingCornerInOutEffects: BuildConfig['motionEffect'][] = [
+  'zoom-top-left',
+  'zoom-out-top-left',
+  'zoom-top-right',
+  'zoom-out-top-right',
+]
 
 const motionLabels: Record<BuildConfig['motionEffect'], string> = {
   auto: 'Tự động luân phiên',
@@ -43,9 +51,12 @@ const motionLabels: Record<BuildConfig['motionEffect'], string> = {
   'zoom-top-left': 'Zoom lên góc trái trên',
   'zoom-up': 'Zoom lên phía trên',
   'zoom-down': 'Zoom xuống phía dưới',
-  'zoom-out': 'Thu nhỏ dần',
+  'zoom-out': 'Thu nhỏ dần từ giữa',
+  'zoom-out-top-left': 'Zoom từ trong ra — góc trái trên',
+  'zoom-out-top-right': 'Zoom từ trong ra — góc phải trên',
   'alternate-top-corners': 'Xen kẽ: lẻ phải trên, chẵn trái trên',
   'alternate-top-corners-reverse': 'Xen kẽ: lẻ trái trên, chẵn phải trên',
+  'alternate-corner-in-out': 'Luân phiên 4 cảnh: vào/ra trái-phải',
 }
 
 export default function AlignmentPreview({
@@ -54,23 +65,44 @@ export default function AlignmentPreview({
   items,
   warnings,
   motionEffect,
+  motionSequence,
   motionZoomPercent,
+  motionZoomOutStartPercent,
   motionHoldMode,
   motionHoldPercent,
   motionHoldSeconds,
   onClose,
 }: AlignmentPreviewProps) {
-  function resolvedMotion(index: number): BuildConfig['motionEffect'] {
-    if (motionEffect === 'auto') return automaticEffects[index % automaticEffects.length]
-    if (motionEffect === 'alternate-top-corners') {
+  const effectiveMotionSequence = motionSequence.length
+    ? motionSequence
+    : [{ id: 'motion-1', effect: motionEffect }]
+
+  function resolveMotionEffect(effect: BuildConfig['motionEffect'], index: number): BuildConfig['motionEffect'] {
+    if (effect === 'auto') return automaticEffects[index % automaticEffects.length]
+    if (effect === 'alternate-top-corners') {
       return alternatingTopCornerEffects[index % alternatingTopCornerEffects.length]
     }
-    if (motionEffect === 'alternate-top-corners-reverse') {
+    if (effect === 'alternate-top-corners-reverse') {
       return reversedAlternatingTopCornerEffects[
         index % reversedAlternatingTopCornerEffects.length
       ]
     }
-    return motionEffect
+    if (effect === 'alternate-corner-in-out') {
+      return alternatingCornerInOutEffects[index % alternatingCornerInOutEffects.length]
+    }
+    return effect
+  }
+
+  function resolvedMotion(index: number): {
+    effect: BuildConfig['motionEffect']
+    sequenceIndex: number
+  } {
+    const sequenceIndex = index % effectiveMotionSequence.length
+    const configuredEffect = effectiveMotionSequence[sequenceIndex].effect
+    return {
+      effect: resolveMotionEffect(configuredEffect, index),
+      sequenceIndex,
+    }
   }
 
   const columns: ColumnsType<AlignmentItem> = [
@@ -121,10 +153,11 @@ export default function AlignmentPreview({
       width: 250,
       render: (_, item) => {
         const index = items.indexOf(item)
-        const effect = resolvedMotion(index)
+        const { effect, sequenceIndex } = resolvedMotion(index)
         if (effect === 'none') {
           return (
             <div className="space-y-2">
+              <Tag color="gold">Motion #{sequenceIndex + 1}</Tag>
               <Tag>Đứng yên toàn bộ scene</Tag>
               <Typography.Text type="secondary" className="block text-xs">
                 {item.duration.toFixed(2)} giây, không zoom
@@ -138,12 +171,19 @@ export default function AlignmentPreview({
             ? Math.min(item.duration, motionHoldSeconds)
             : item.duration * (motionHoldPercent / 100)
         const motionSeconds = item.duration - holdSeconds
-        const zoomStart = effect === 'zoom-out' ? 100 + motionZoomPercent : 100
-        const zoomEnd = effect === 'zoom-out' ? 100 : 100 + motionZoomPercent
+        const isZoomOut =
+          effect === 'zoom-out' ||
+          effect === 'zoom-out-top-left' ||
+          effect === 'zoom-out-top-right'
+        const zoomStart = isZoomOut ? 100 + motionZoomOutStartPercent : 100
+        const zoomEnd = isZoomOut ? 100 : 100 + motionZoomPercent
 
         return (
           <div className="space-y-1">
-            <Tag color="blue">{motionLabels[effect]}</Tag>
+            <div className="flex flex-wrap gap-1">
+              <Tag color="gold">Motion #{sequenceIndex + 1}</Tag>
+              <Tag color="blue">{motionLabels[effect]}</Tag>
+            </div>
             <Typography.Text className="block text-xs">
               Chạy: <strong>{motionSeconds.toFixed(2)} giây</strong>
             </Typography.Text>
@@ -162,71 +202,78 @@ export default function AlignmentPreview({
 
   return (
     <Modal
+      className="alignment-preview-modal"
       title={`Preview Alignment${items.length ? ` — ${items.length} scenes` : ''}`}
       open={open}
       onCancel={onClose}
       footer={null}
-      width={1220}
+      width="min(1220px, calc(100vw - 48px))"
+      style={{ top: 16 }}
       destroyOnHidden
     >
-      <Descriptions
-        className="mb-4"
-        size="small"
-        bordered
-        column={{ xs: 1, sm: 2, md: 4 }}
-        items={[
-          {
-            key: 'effect',
-            label: 'Hiệu ứng',
-            children: motionLabels[motionEffect],
-          },
-          {
-            key: 'zoom',
-            label: 'Mức zoom',
-            children: `${motionZoomPercent}%`,
-          },
-          {
-            key: 'hold',
-            label: 'Giữ cuối',
-            children:
-              motionHoldMode === 'seconds'
-                ? `${motionHoldSeconds}s cố định mỗi scene`
-                : `${motionHoldPercent}% mỗi scene`,
-          },
-          {
-            key: 'formula',
-            label: 'Công thức',
-            children:
-              motionHoldMode === 'seconds'
-                ? `Chạy duration - ${motionHoldSeconds}s + giữ ${motionHoldSeconds}s cuối`
-                : `Chạy ${100 - motionHoldPercent}% + giữ ${motionHoldPercent}%`,
-          },
-        ]}
-      />
-      {warnings.length > 0 && (
-        <Alert
-          className="mb-4"
-          type="warning"
-          showIcon
-          message="Cảnh báo alignment"
-          description={
-            <ul className="m-0 pl-5">
-              {warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
-          }
+      <div className="alignment-preview-content">
+        <Descriptions
+          className="alignment-preview-summary mb-4"
+          size="small"
+          bordered
+          column={{ xs: 1, sm: 2, md: 4 }}
+          items={[
+            {
+              key: 'effect',
+              label: 'Sequence',
+              children: `${effectiveMotionSequence.length} chuyển động`,
+            },
+            {
+              key: 'formula',
+              label: 'Công thức lặp',
+              children: `scene index % ${effectiveMotionSequence.length}`,
+            },
+            {
+              key: 'zoom',
+              label: 'Zoom vào',
+              children: `${motionZoomPercent}%`,
+            },
+            {
+              key: 'zoomOut',
+              label: 'Zoom từ trong ra',
+              children: `${motionZoomOutStartPercent}%`,
+            },
+            {
+              key: 'hold',
+              label: 'Giữ cuối',
+              children:
+                motionHoldMode === 'seconds'
+                  ? `${motionHoldSeconds}s cố định mỗi scene`
+                  : `${motionHoldPercent}% mỗi scene`,
+            },
+          ]}
         />
-      )}
-      <Table
-        rowKey="sceneNumber"
-        columns={columns}
-        dataSource={items}
-        loading={loading}
-        pagination={{ pageSize: 10, showSizeChanger: false }}
-        locale={{ emptyText: <Empty description="Chưa có dữ liệu alignment" /> }}
-        scroll={{ y: '58vh' }}
-      />
+        {warnings.length > 0 && (
+          <Alert
+            className="alignment-preview-warning mb-4"
+            type="warning"
+            showIcon
+            message="Cảnh báo alignment"
+            description={
+              <ul className="m-0 pl-5">
+                {warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            }
+          />
+        )}
+        <Table
+          className="alignment-preview-table"
+          rowKey="sceneNumber"
+          columns={columns}
+          dataSource={items}
+          loading={loading}
+          pagination={{ pageSize: 10, showSizeChanger: false }}
+          locale={{ emptyText: <Empty description="Chưa có dữ liệu alignment" /> }}
+          scroll={{ y: 'max(320px, calc(100vh - 430px))' }}
+        />
+      </div>
     </Modal>
   )
 }

@@ -287,7 +287,9 @@ function defaultVideoSettings(
     scenePauseMs: 250,
     resolution: '1920x1080',
     motionEffect: 'zoom-right',
+    motionSequence: [{ id: 'motion-1', effect: 'zoom-right' }],
     motionZoomPercent: 8,
+    motionZoomOutStartPercent: 12,
     motionHoldMode: 'percent',
     motionHoldPercent: 20,
     motionHoldSeconds: 2,
@@ -296,10 +298,12 @@ function defaultVideoSettings(
 
 function defaultAudioSettings(rootPath: string): ProjectAudioSettings {
   const audioOutputDirectory = rootPath
+  const outputPath = path.join(audioOutputDirectory, 'merged-audio.mp3')
   return {
     audioDirectory: existingPath(preferences.get('lastAudioDirectory')),
     audioOutputDirectory,
-    outputPath: path.join(audioOutputDirectory, 'merged-audio.mp3'),
+    outputPath,
+    srtOutputPath: outputPath.replace(/\.[^.]+$/, '.srt'),
     pauseSeconds: 1,
     createSrt: true,
     language: 'auto',
@@ -387,17 +391,43 @@ function getProjectState(): ProjectState {
   let projects = preferences.get('projects')
   let normalized = false
   projects = projects.map((project) => {
-    if (project.audioSettings.audioOutputDirectory && project.videoShuffleSettings) return project
+    if (
+      project.audioSettings.audioOutputDirectory &&
+      project.audioSettings.srtOutputPath &&
+      project.videoShuffleSettings &&
+      Number.isFinite(project.videoSettings.motionZoomOutStartPercent) &&
+      Array.isArray(project.videoSettings.motionSequence) &&
+      project.videoSettings.motionSequence.length > 0
+    ) {
+      return project
+    }
     normalized = true
     const outputDirectory = project.audioSettings.outputPath
       ? path.dirname(project.audioSettings.outputPath)
       : project.rootPath
+    const outputPath = project.audioSettings.outputPath || path.join(outputDirectory, 'merged-audio.mp3')
     return {
       ...project,
       audioSettings: {
         ...project.audioSettings,
         audioOutputDirectory: outputDirectory,
-        outputPath: project.audioSettings.outputPath || path.join(outputDirectory, 'merged-audio.mp3'),
+        outputPath,
+        srtOutputPath:
+          project.audioSettings.srtOutputPath || outputPath.replace(/\.[^.]+$/, '.srt'),
+      },
+      videoSettings: {
+        ...project.videoSettings,
+        motionZoomOutStartPercent: project.videoSettings.motionZoomOutStartPercent ?? 12,
+        motionSequence:
+          Array.isArray(project.videoSettings.motionSequence) &&
+          project.videoSettings.motionSequence.length > 0
+            ? project.videoSettings.motionSequence
+            : [
+                {
+                  id: 'motion-1',
+                  effect: project.videoSettings.motionEffect ?? 'zoom-right',
+                },
+              ],
       },
       videoShuffleSettings: project.videoShuffleSettings || defaultVideoShuffleSettings(),
     }
@@ -977,6 +1007,15 @@ app.whenReady().then(() => {
     return result.canceled ? null : result.filePath
   })
 
+  ipcMain.handle('dialog:saveSrt', async (_event, defaultPath?: string) => {
+    if (!mainWindow) return null
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: defaultPath || path.join(projectRoot(), 'merged-audio.srt'),
+      filters: [{ name: 'SRT subtitle', extensions: ['srt'] }],
+    })
+    return result.canceled ? null : result.filePath
+  })
+
   ipcMain.handle('audio:selectOutputDirectory', async (_event, defaultPath?: string) => {
     if (!mainWindow) return null
     const project = getProjectState().activeProject
@@ -989,12 +1028,14 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths[0]) return null
     const directory = result.filePaths[0]
     try {
+      const outputPath = path.join(directory, 'merged-audio.mp3')
       updateActiveProject((currentProject) => ({
         ...currentProject,
         audioSettings: {
           ...currentProject.audioSettings,
           audioOutputDirectory: directory,
-          outputPath: path.join(directory, 'merged-audio.mp3'),
+          outputPath,
+          srtOutputPath: currentProject.audioSettings.srtOutputPath || outputPath.replace(/\.[^.]+$/, '.srt'),
         },
       }))
     } catch {

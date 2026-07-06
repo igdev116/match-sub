@@ -13,11 +13,13 @@ import {
   Typography,
 } from 'antd'
 import {
+  DeleteOutlined,
   FileExcelOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   PictureOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
   ScanOutlined,
@@ -28,6 +30,7 @@ import type {
   BuildConfig,
   BuildProgress as BuildProgressState,
   ImagePreviewItem,
+  MotionSequenceItem,
   PathInfo,
   Scene,
   SourceFolderInspection,
@@ -42,6 +45,48 @@ import SourcePreview, {
 import { useProjectStore } from '../stores/useProjectStore'
 
 const RESOLUTIONS = ['1920x1080', '1280x720', '1080x1920', '3840x2160']
+const MOTION_EFFECTS_WITH_ZOOM_OUT: BuildConfig['motionEffect'][] = [
+  'auto',
+  'zoom-out',
+  'zoom-out-top-left',
+  'zoom-out-top-right',
+  'alternate-corner-in-out',
+]
+const LEGACY_AUTOMATIC_MOTION_EFFECTS: BuildConfig['motionEffect'][] = [
+  'zoom-right',
+  'zoom-left',
+  'zoom-center',
+  'zoom-up',
+  'zoom-down',
+  'zoom-out',
+]
+const LEGACY_ALTERNATE_TOP_CORNER_EFFECTS: BuildConfig['motionEffect'][] = [
+  'zoom-top-right',
+  'zoom-top-left',
+]
+const LEGACY_ALTERNATE_TOP_CORNER_REVERSE_EFFECTS: BuildConfig['motionEffect'][] = [
+  'zoom-top-left',
+  'zoom-top-right',
+]
+const LEGACY_ALTERNATE_CORNER_IN_OUT_EFFECTS: BuildConfig['motionEffect'][] = [
+  'zoom-top-left',
+  'zoom-out-top-left',
+  'zoom-top-right',
+  'zoom-out-top-right',
+]
+const MOTION_EFFECT_OPTIONS: { value: BuildConfig['motionEffect']; label: string }[] = [
+  { value: 'zoom-top-left', label: 'Zoom vào góc trái trên' },
+  { value: 'zoom-top-right', label: 'Zoom vào góc phải trên' },
+  { value: 'zoom-out-top-left', label: 'Zoom từ trong ra — góc trái trên' },
+  { value: 'zoom-out-top-right', label: 'Zoom từ trong ra — góc phải trên' },
+  { value: 'zoom-right', label: 'Zoom vào bên phải' },
+  { value: 'zoom-left', label: 'Zoom vào bên trái' },
+  { value: 'zoom-center', label: 'Zoom vào chính giữa' },
+  { value: 'zoom-up', label: 'Zoom lên phía trên' },
+  { value: 'zoom-down', label: 'Zoom xuống phía dưới' },
+  { value: 'zoom-out', label: 'Thu nhỏ dần từ giữa' },
+  { value: 'none', label: 'Đứng yên' },
+]
 
 dayjs.extend(relativeTime)
 dayjs.locale('vi')
@@ -75,6 +120,32 @@ function joinPath(directory: string, filename: string): string {
   return `${directory.replace(/[\\/]+$/, '')}${separator}${filename}`
 }
 
+function hasZoomOutMotion(effect: BuildConfig['motionEffect']): boolean {
+  return MOTION_EFFECTS_WITH_ZOOM_OUT.includes(effect)
+}
+
+function newMotionSequenceItem(effect: BuildConfig['motionEffect']): MotionSequenceItem {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    effect,
+  }
+}
+
+function expandLegacyMotionSequenceItem(item: MotionSequenceItem): MotionSequenceItem[] {
+  const effectGroups: Partial<Record<BuildConfig['motionEffect'], BuildConfig['motionEffect'][]>> = {
+    auto: LEGACY_AUTOMATIC_MOTION_EFFECTS,
+    'alternate-top-corners': LEGACY_ALTERNATE_TOP_CORNER_EFFECTS,
+    'alternate-top-corners-reverse': LEGACY_ALTERNATE_TOP_CORNER_REVERSE_EFFECTS,
+    'alternate-corner-in-out': LEGACY_ALTERNATE_CORNER_IN_OUT_EFFECTS,
+  }
+  const effects = effectGroups[item.effect]
+  if (!effects) return [item]
+  return effects.map((effect, index) => ({
+    id: `${item.id}-${index}`,
+    effect,
+  }))
+}
+
 export default function BuildPage() {
   const { message } = App.useApp()
   const [imagesDirectory, setImagesDirectory] = useState('')
@@ -101,7 +172,17 @@ export default function BuildPage() {
   const scenePauseMs = videoSettings?.scenePauseMs ?? 250
   const resolution = videoSettings?.resolution ?? '1920x1080'
   const motionEffect = videoSettings?.motionEffect ?? 'zoom-right'
+  const motionSequence = useMemo<MotionSequenceItem[]>(
+    () => {
+      const source = videoSettings?.motionSequence?.length
+        ? videoSettings.motionSequence
+        : [{ id: 'motion-1', effect: motionEffect }]
+      return source.flatMap(expandLegacyMotionSequenceItem)
+    },
+    [motionEffect, videoSettings?.motionSequence],
+  )
   const motionZoomPercent = videoSettings?.motionZoomPercent ?? 8
+  const motionZoomOutStartPercent = videoSettings?.motionZoomOutStartPercent ?? 12
   const motionHoldMode = videoSettings?.motionHoldMode ?? 'percent'
   const motionHoldPercent = videoSettings?.motionHoldPercent ?? 20
   const motionHoldSeconds = videoSettings?.motionHoldSeconds ?? 2
@@ -183,6 +264,8 @@ export default function BuildPage() {
     [imagesDirectory, sceneListPath, srtPath],
   )
   const outputDisplayPath = mode === 'clips' ? dirname(outputPath) : outputPath
+  const motionSequenceHasZoomOut = motionSequence.some((item) => hasZoomOutMotion(item.effect))
+  const motionSequenceAllStill = motionSequence.every((item) => item.effect === 'none')
 
   function applySourceInspection(
     inspection: SourceFolderInspection,
@@ -207,6 +290,29 @@ export default function BuildPage() {
 
   function saveVideoSettings(patch: Parameters<typeof updateVideoSettings>[0]) {
     void updateVideoSettings(patch)
+  }
+
+  function saveMotionSequence(nextSequence: MotionSequenceItem[]) {
+    const normalized = nextSequence.length > 0 ? nextSequence : [newMotionSequenceItem('zoom-right')]
+    saveVideoSettings({
+      motionSequence: normalized,
+      motionEffect: normalized[0].effect,
+    })
+  }
+
+  function addMotionSequenceItem() {
+    saveMotionSequence([...motionSequence, newMotionSequenceItem(motionSequence.at(-1)?.effect ?? 'zoom-right')])
+  }
+
+  function updateMotionSequenceItem(id: string, effect: BuildConfig['motionEffect']) {
+    saveMotionSequence(
+      motionSequence.map((item) => (item.id === id ? { ...item, effect } : item)),
+    )
+  }
+
+  function removeMotionSequenceItem(id: string) {
+    if (motionSequence.length <= 1) return
+    saveMotionSequence(motionSequence.filter((item) => item.id !== id))
   }
 
   function validatePath(key: SourceKey, value: string, info: PathInfo): string | undefined {
@@ -429,7 +535,9 @@ export default function BuildPage() {
       scenePauseMs,
       resolution,
       motionEffect,
+      motionSequence,
       motionZoomPercent,
+      motionZoomOutStartPercent,
       motionHoldMode,
       motionHoldPercent,
       motionHoldSeconds,
@@ -463,7 +571,9 @@ export default function BuildPage() {
         buildPerformance,
         ffmpegThreads,
         motionEffect,
+        motionSequence,
         motionZoomPercent,
+        motionZoomOutStartPercent,
         motionHoldMode,
         motionHoldPercent,
         motionHoldSeconds,
@@ -675,90 +785,137 @@ export default function BuildPage() {
                   disabled={busy}
                 />
               </div>
-              <div>
+            </div>
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+              <div className="mb-4">
                 <Typography.Text strong>Chuyển động ảnh</Typography.Text>
-                <Select
-                  className="mt-3 w-full"
-                  value={motionEffect}
-                  options={[
-                    { value: 'auto', label: 'Tự động luân phiên' },
-                    { value: 'alternate-top-corners', label: 'Xen kẽ: lẻ phải trên, chẵn trái trên' },
-                    { value: 'alternate-top-corners-reverse', label: 'Xen kẽ: lẻ trái trên, chẵn phải trên' },
-                    { value: 'zoom-right', label: 'Zoom vào bên phải' },
-                    { value: 'zoom-left', label: 'Zoom vào bên trái' },
-                    { value: 'zoom-top-right', label: 'Zoom lên góc phải trên' },
-                    { value: 'zoom-top-left', label: 'Zoom lên góc trái trên' },
-                    { value: 'zoom-center', label: 'Zoom vào chính giữa' },
-                    { value: 'zoom-up', label: 'Zoom lên phía trên' },
-                    { value: 'zoom-down', label: 'Zoom xuống phía dưới' },
-                    { value: 'zoom-out', label: 'Thu nhỏ dần' },
-                    { value: 'none', label: 'Đứng yên' },
-                  ]}
-                  onChange={(value) => saveVideoSettings({ motionEffect: value })}
-                  disabled={busy}
-                />
-                <Typography.Text className="mt-2 block" type="secondary">
-                  Chọn hướng chuyển động cho từng scene.
+                <Typography.Text className="mt-1 block" type="secondary">
+                  Chọn preset chuyển động, rồi chỉnh riêng mức zoom vào và mức bắt đầu khi zoom từ trong ra.
                 </Typography.Text>
               </div>
-              <div>
-                <Typography.Text strong>Mức zoom</Typography.Text>
-                <InputNumber
-                  className="mt-3 !w-full"
-                  min={0}
-                  max={50}
-                  step={1}
-                  precision={1}
-                  addonAfter="%"
-                  value={motionZoomPercent}
-                  onChange={(value) => saveVideoSettings({ motionZoomPercent: value ?? 8 })}
-                  disabled={busy || motionEffect === 'none'}
-                />
-                <Typography.Text className="mt-2 block" type="secondary">
-                  8% nhẹ; 15–20% rõ hơn.
-                </Typography.Text>
-              </div>
-              <div>
-                <Typography.Text strong>Giữ khung hình cuối</Typography.Text>
-                <Radio.Group
-                  className="mt-3"
-                  value={motionHoldMode}
-                  onChange={(event) => saveVideoSettings({ motionHoldMode: event.target.value })}
-                  disabled={busy || motionEffect === 'none'}
-                >
-                  <Radio value="percent">Theo % scene</Radio>
-                  <Radio value="seconds">Số giây cố định</Radio>
-                </Radio.Group>
-                {motionHoldMode === 'seconds' ? (
+              <div className="grid gap-5 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <Typography.Text strong>Danh sách chuyển động</Typography.Text>
+                      <Typography.Text className="mt-1 block" type="secondary">
+                        Nếu có 2 chuyển động thì video 1 dùng dòng 1, video 2 dùng dòng 2, video 3 quay lại dòng 1.
+                      </Typography.Text>
+                    </div>
+                    <Button
+                      icon={<PlusOutlined />}
+                      disabled={busy}
+                      onClick={addMotionSequenceItem}
+                    >
+                      Thêm chuyển động
+                    </Button>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {motionSequence.map((item, index) => (
+                      <div
+                        key={item.id}
+                        className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[100px_1fr_auto]"
+                      >
+                        <div className="flex items-center">
+                          <Typography.Text strong>Video {index + 1}</Typography.Text>
+                        </div>
+                        <Select
+                          className="w-full"
+                          value={item.effect}
+                          options={MOTION_EFFECT_OPTIONS}
+                          onChange={(value) => updateMotionSequenceItem(item.id, value)}
+                          disabled={busy}
+                        />
+                        <Button
+                          danger
+                          icon={<DeleteOutlined />}
+                          disabled={busy || motionSequence.length <= 1}
+                          onClick={() => removeMotionSequenceItem(item.id)}
+                        >
+                          Xoá
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Typography.Text strong>Zoom vào tối đa</Typography.Text>
                   <InputNumber
                     className="mt-3 !w-full"
                     min={0}
-                    max={300}
-                    step={0.5}
-                    precision={2}
-                    addonAfter="giây"
-                    value={motionHoldSeconds}
-                    onChange={(value) => saveVideoSettings({ motionHoldSeconds: value ?? 2 })}
-                    disabled={busy || motionEffect === 'none'}
-                  />
-                ) : (
-                  <InputNumber
-                    className="mt-3 !w-full"
-                    min={0}
-                    max={90}
-                    step={5}
+                    max={50}
+                    step={1}
                     precision={1}
                     addonAfter="%"
-                    value={motionHoldPercent}
-                    onChange={(value) => saveVideoSettings({ motionHoldPercent: value ?? 20 })}
-                    disabled={busy || motionEffect === 'none'}
+                    value={motionZoomPercent}
+                    onChange={(value) => saveVideoSettings({ motionZoomPercent: value ?? 8 })}
+                    disabled={busy || motionSequenceAllStill}
                   />
-                )}
-                <Typography.Text className="mt-2 block" type="secondary">
-                  {motionHoldMode === 'seconds'
-                    ? `Giữ cố định ${motionHoldSeconds}s cuối scene. Nếu scene ngắn hơn thì tự clamp theo duration scene.`
-                    : `${motionHoldPercent}% cuối scene đứng yên; scene 10 giây tương đương ${(10 * motionHoldPercent / 100).toFixed(1)} giây.`}
-                </Typography.Text>
+                  <Typography.Text className="mt-2 block" type="secondary">
+                    Dùng cho các preset zoom vào: 100% → {(100 + motionZoomPercent).toFixed(1)}%.
+                  </Typography.Text>
+                </div>
+                <div>
+                  <Typography.Text strong>Zoom từ trong ra - mức bắt đầu</Typography.Text>
+                  <InputNumber
+                    className="mt-3 !w-full"
+                    min={0}
+                    max={50}
+                    step={1}
+                    precision={1}
+                    addonAfter="%"
+                    value={motionZoomOutStartPercent}
+                    onChange={(value) => saveVideoSettings({ motionZoomOutStartPercent: value ?? 12 })}
+                    disabled={busy || !motionSequenceHasZoomOut}
+                  />
+                  <Typography.Text className="mt-2 block" type="secondary">
+                    Dùng cho zoom từ trong ra: {(100 + motionZoomOutStartPercent).toFixed(1)}% → 100%.
+                  </Typography.Text>
+                </div>
+                <div className="md:col-span-2">
+                  <Typography.Text strong>Giữ khung hình cuối</Typography.Text>
+                  <div>
+                    <Radio.Group
+                      className="mt-3"
+                      value={motionHoldMode}
+                      onChange={(event) => saveVideoSettings({ motionHoldMode: event.target.value })}
+                      disabled={busy || motionSequenceAllStill}
+                    >
+                      <Radio value="percent">Theo % scene</Radio>
+                      <Radio value="seconds">Số giây cố định</Radio>
+                    </Radio.Group>
+                  </div>
+                  {motionHoldMode === 'seconds' ? (
+                    <InputNumber
+                      className="mt-3 !w-full"
+                      min={0}
+                      max={300}
+                      step={0.5}
+                      precision={2}
+                      addonAfter="giây"
+                      value={motionHoldSeconds}
+                      onChange={(value) => saveVideoSettings({ motionHoldSeconds: value ?? 2 })}
+                      disabled={busy || motionSequenceAllStill}
+                    />
+                  ) : (
+                    <InputNumber
+                      className="mt-3 !w-full"
+                      min={0}
+                      max={90}
+                      step={5}
+                      precision={1}
+                      addonAfter="%"
+                      value={motionHoldPercent}
+                      onChange={(value) => saveVideoSettings({ motionHoldPercent: value ?? 20 })}
+                      disabled={busy || motionSequenceAllStill}
+                    />
+                  )}
+                  <Typography.Text className="mt-2 block" type="secondary">
+                    {motionHoldMode === 'seconds'
+                      ? `Giữ cố định ${motionHoldSeconds}s cuối scene. Nếu scene ngắn hơn thì tự clamp theo duration scene.`
+                      : `${motionHoldPercent}% cuối scene đứng yên; scene 10 giây tương đương ${(10 * motionHoldPercent / 100).toFixed(1)} giây.`}
+                  </Typography.Text>
+                </div>
               </div>
             </div>
             <div className="mt-6 border-t border-slate-200 pt-5">
@@ -830,7 +987,9 @@ export default function BuildPage() {
         items={alignment}
         warnings={alignmentWarnings}
         motionEffect={motionEffect}
+        motionSequence={motionSequence}
         motionZoomPercent={motionZoomPercent}
+        motionZoomOutStartPercent={motionZoomOutStartPercent}
         motionHoldMode={motionHoldMode}
         motionHoldPercent={motionHoldPercent}
         motionHoldSeconds={motionHoldSeconds}

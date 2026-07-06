@@ -132,10 +132,14 @@ export async function transcribeToSrt(
 
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'tao-sub-whisper-'))
   const wavPath = path.join(temporaryDirectory, 'audio.wav')
-  const outputBase = config.outputPath.replace(/\.[^.]+$/, '')
-  const srtPath = `${outputBase}.srt`
+  const srtPath =
+    config.srtOutputPath && config.srtOutputPath.trim()
+      ? config.srtOutputPath.replace(/\.srt$/i, '') + '.srt'
+      : config.outputPath.replace(/\.[^.]+$/, '.srt')
+  const outputBase = srtPath.replace(/\.srt$/i, '')
 
   try {
+    fs.mkdirSync(path.dirname(srtPath), { recursive: true })
     onProgress({ phase: 'transcribing', percent: 5, message: 'Đang chuẩn hóa audio...' })
     await convertAudioForWhisper(config.outputPath, wavPath)
     onProgress({ phase: 'transcribing', percent: 15, message: 'Whisper đang nhận dạng lời thoại...' })

@@ -69,6 +69,16 @@ function audioOutputPath(directory: string): string {
   return `${directory.replace(/[\\/]+$/, '')}${separator}merged-audio.mp3`
 }
 
+function srtOutputPathFromAudio(audioPath: string): string {
+  if (!audioPath) return ''
+  const withoutExtension = audioPath.replace(/\.[^/.\\]+$/, '')
+  return `${withoutExtension}.srt`
+}
+
+function directoryFromPath(filePath: string): string {
+  return filePath.split(/[\\/]/).slice(0, -1).join(filePath.includes('\\') ? '\\' : '/')
+}
+
 function SortableAudioItem({
   item,
   index,
@@ -135,6 +145,7 @@ export default function AudioMergePage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [audioDirectory, setAudioDirectory] = useState('')
   const [outputPath, setOutputPath] = useState('')
+  const [srtOutputPath, setSrtOutputPath] = useState('')
   const [processing, setProcessing] = useState(false)
   const [directoryLoading, setDirectoryLoading] = useState(false)
   const durationRequestedPaths = useRef(new Set<string>())
@@ -166,7 +177,10 @@ export default function AudioMergePage() {
   useEffect(() => {
     if (!audioSettings) return
     setAudioDirectory(audioSettings.audioDirectory)
-    setOutputPath(audioSettings.outputPath || audioOutputPath(audioSettings.audioOutputDirectory))
+    const nextOutputPath =
+      audioSettings.outputPath || audioOutputPath(audioSettings.audioOutputDirectory)
+    setOutputPath(nextOutputPath)
+    setSrtOutputPath(audioSettings.srtOutputPath || srtOutputPathFromAudio(nextOutputPath))
     setItems([])
     setCurrentPage(1)
     durationRequestedPaths.current.clear()
@@ -185,7 +199,8 @@ export default function AudioMergePage() {
   )
   const missingRequirements = [
     items.length < 2 ? 'chọn ít nhất 2 file audio' : '',
-    !outputPath ? 'chọn file output' : '',
+    !outputPath ? 'chọn file MP3 output' : '',
+    createSrt && !srtOutputPath ? 'chọn file SRT output' : '',
     createSrt && !whisperStatus?.available ? 'cài whisper.cpp' : '',
     createSrt && !whisperStatus?.modelAvailable ? 'tải model base' : '',
   ].filter(Boolean)
@@ -316,14 +331,16 @@ export default function AudioMergePage() {
     }
   }
 
-  async function chooseOutputDirectory() {
-    const selected = await window.videoBuilder.selectAudioOutputDirectory(audioOutputDirectory)
+  async function chooseOutputPath() {
+    const selected = await window.videoBuilder.saveAudio(outputPath || audioOutputPath(audioOutputDirectory))
     if (selected) {
-      const nextOutputPath = audioOutputPath(selected)
-      setOutputPath(nextOutputPath)
+      const nextSrtOutputPath = srtOutputPath || srtOutputPathFromAudio(selected)
+      setOutputPath(selected)
+      setSrtOutputPath(nextSrtOutputPath)
       saveAudioSettings({
-        audioOutputDirectory: selected,
-        outputPath: nextOutputPath,
+        audioOutputDirectory: directoryFromPath(selected),
+        outputPath: selected,
+        srtOutputPath: nextSrtOutputPath,
       })
     }
   }
@@ -332,6 +349,20 @@ export default function AudioMergePage() {
     if (!outputPath) return
     const opened = await window.videoBuilder.showInFolder(outputPath)
     if (!opened) message.error('Không thể mở thư mục output.')
+  }
+
+  async function chooseSrtOutputPath() {
+    const selected = await window.videoBuilder.saveSrt(srtOutputPath || srtOutputPathFromAudio(outputPath))
+    if (selected) {
+      setSrtOutputPath(selected)
+      saveAudioSettings({ srtOutputPath: selected })
+    }
+  }
+
+  async function showSrtOutputFolder() {
+    if (!srtOutputPath) return
+    const opened = await window.videoBuilder.showInFolder(srtOutputPath)
+    if (!opened) message.error('Không thể mở thư mục SRT.')
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -359,13 +390,14 @@ export default function AudioMergePage() {
         files: items.map((item) => item.path),
         pauseSeconds,
         outputPath,
+        srtOutputPath,
         createSrt,
         language,
         whisperThreads,
       })
       message.success(
         createSrt
-          ? `Đã ghép audio và xuất SRT cạnh file output.`
+          ? `Đã ghép audio: ${outputPath} và xuất SRT: ${srtOutputPath}`
           : `Đã ghép audio: ${outputPath}`,
         6,
       )
@@ -535,7 +567,7 @@ export default function AudioMergePage() {
             </Typography.Text>
           </div>
           <div>
-            <Typography.Text strong>File output</Typography.Text>
+            <Typography.Text strong>File MP3 output</Typography.Text>
             <Space.Compact className="mt-2 w-full">
               <Input value={outputPath} readOnly />
               <Button
@@ -549,13 +581,13 @@ export default function AudioMergePage() {
               <Button
                 icon={<FolderOpenOutlined />}
                 disabled={processing}
-                onClick={() => void chooseOutputDirectory()}
+                onClick={() => void chooseOutputPath()}
               >
-                Chọn folder lưu
+                Chọn file MP3
               </Button>
             </Space.Compact>
             <Typography.Text type="secondary" className="mt-2 block text-xs">
-              App sẽ lưu mặc định file merged-audio.mp3 trong folder đã chọn.
+              Có thể chọn file MP3 ở folder riêng, ví dụ output/audio/merged-audio.mp3.
             </Typography.Text>
           </div>
         </div>
@@ -615,6 +647,31 @@ export default function AudioMergePage() {
                 />
               </div>
             )}
+
+            <div>
+              <Typography.Text strong>File SRT output</Typography.Text>
+              <Space.Compact className="mt-2 w-full">
+                <Input value={srtOutputPath} readOnly />
+                <Button
+                  icon={<FolderViewOutlined />}
+                  disabled={!srtOutputPath}
+                  onClick={() => void showSrtOutputFolder()}
+                  title="Mở thư mục chứa SRT"
+                >
+                  Mở thư mục
+                </Button>
+                <Button
+                  icon={<FolderOpenOutlined />}
+                  disabled={processing || whisperSetupBusy}
+                  onClick={() => void chooseSrtOutputPath()}
+                >
+                  Chọn file SRT
+                </Button>
+              </Space.Compact>
+              <Typography.Text type="secondary" className="mt-2 block text-xs">
+                SRT có thể lưu khác folder với MP3. Nếu chưa chọn, app tự gợi ý cùng tên với MP3.
+              </Typography.Text>
+            </div>
 
             <div className="grid gap-5 md:grid-cols-2">
               <div>

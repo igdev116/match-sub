@@ -70,7 +70,9 @@ export interface ProjectVideoSettings {
   scenePauseMs: number
   resolution: string
   motionEffect: BuildConfig['motionEffect']
+  motionSequence: MotionSequenceItem[]
   motionZoomPercent: number
+  motionZoomOutStartPercent: number
   motionHoldMode: NonNullable<BuildConfig['motionHoldMode']>
   motionHoldPercent: number
   motionHoldSeconds: number
@@ -80,6 +82,7 @@ export interface ProjectAudioSettings {
   audioDirectory: string
   audioOutputDirectory: string
   outputPath: string
+  srtOutputPath: string
   pauseSeconds: number
   createSrt: boolean
   language: string
@@ -130,6 +133,11 @@ export interface PreviewConfig {
   srtPath: string
 }
 
+export interface MotionSequenceItem {
+  id: string
+  effect: BuildConfig['motionEffect']
+}
+
 export interface BuildConfig extends PreviewConfig {
   outputPath: string
   mode: 'full' | 'clips'
@@ -150,9 +158,14 @@ export interface BuildConfig extends PreviewConfig {
     | 'zoom-up'
     | 'zoom-down'
     | 'zoom-out'
+    | 'zoom-out-top-left'
+    | 'zoom-out-top-right'
     | 'alternate-top-corners'
     | 'alternate-top-corners-reverse'
+    | 'alternate-corner-in-out'
+  motionSequence?: MotionSequenceItem[]
   motionZoomPercent: number
+  motionZoomOutStartPercent?: number
   motionHoldMode?: 'percent' | 'seconds'
   motionHoldPercent: number
   motionHoldSeconds?: number
@@ -166,7 +179,9 @@ export interface SampleBuildConfig {
   buildPerformance?: BuildConfig['buildPerformance']
   ffmpegThreads?: number
   motionEffect: BuildConfig['motionEffect']
+  motionSequence?: MotionSequenceItem[]
   motionZoomPercent: number
+  motionZoomOutStartPercent?: number
   motionHoldMode?: BuildConfig['motionHoldMode']
   motionHoldPercent: number
   motionHoldSeconds?: number
@@ -186,6 +201,7 @@ export interface AudioMergeConfig {
   files: string[]
   pauseSeconds: number
   outputPath: string
+  srtOutputPath?: string
   createSrt: boolean
   language: string
   whisperThreads: number

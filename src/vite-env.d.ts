@@ -56,6 +56,7 @@ declare global {
       ) => Promise<{ path: string; durationSeconds: number | null }[]>
       saveFile: (defaultPath?: string) => Promise<string | null>
       saveAudio: (defaultPath?: string) => Promise<string | null>
+      saveSrt: (defaultPath?: string) => Promise<string | null>
       selectAudioOutputDirectory: (defaultPath?: string) => Promise<string | null>
       showInFolder: (path: string) => Promise<boolean>
       getDefaults: () => Promise<ProjectDefaults>

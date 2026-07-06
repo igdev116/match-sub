@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('videoBuilder', {
     ipcRenderer.invoke('dialog:saveFile', defaultPath),
   saveAudio: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveAudio', defaultPath),
+  saveSrt: (defaultPath?: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:saveSrt', defaultPath),
   selectAudioOutputDirectory: (defaultPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('audio:selectOutputDirectory', defaultPath),
   showInFolder: (path: string): Promise<boolean> =>
