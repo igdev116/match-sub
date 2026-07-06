@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
 
+# Cấp quyền tạo Releases
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -21,12 +25,14 @@ jobs:
       - name: Build & Package Windows
         run: yarn dist:win
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Không để electron-builder tự publish, mình upload thủ công ở bước sau
+          GH_TOKEN: ""
 
       - name: Upload .exe to Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*.exe
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -45,11 +51,12 @@ jobs:
       - name: Build & Package macOS
         run: yarn dist:mac
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ""
 
       - name: Upload .dmg to Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*.dmg
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
