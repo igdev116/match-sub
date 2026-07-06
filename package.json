@@ -1,6 +1,6 @@
 {
   "name": "tao-sub",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "packageManager": "yarn@1.22.22",
   "description": "Desktop app for building videos from scene images and SRT timing",
@@ -18,13 +18,31 @@
   "build": {
     "appId": "com.tao-sub.video-builder",
     "productName": "Video Builder",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "dist-electron/**/*"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
     "extraResources": [
-      { "from": "node_modules/ffmpeg-static", "to": "ffmpeg-static", "filter": ["**/*"] }
+      {
+        "from": "node_modules/ffmpeg-static",
+        "to": "ffmpeg-static",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "mac": {
       "target": "dmg"
