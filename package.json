@@ -9,8 +9,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "dist:win": "yarn build && electron-builder --win --x64",
-    "dist:mac": "yarn build && electron-builder --mac",
+    "dist:win": "yarn build && electron-builder --win --x64 --publish=never",
+    "dist:mac": "yarn build && electron-builder --mac --publish=never",
     "release": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: prepare release' && npm version patch && git push && git push --tags",
     "release:minor": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: prepare release' && npm version minor && git push && git push --tags",
     "release:major": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: prepare release' && npm version major && git push && git push --tags"
