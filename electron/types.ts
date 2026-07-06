@@ -92,6 +92,7 @@ export interface ProjectAudioSettings {
 
 export interface ProjectVideoShuffleSettings {
   videoDirectory: string
+  shortVideoThresholdSeconds: number
 }
 
 export interface AppProject {
@@ -220,6 +221,10 @@ export interface VideoShuffleFileItem {
   size: number
 }
 
+export interface VideoShuffleShortFileItem extends VideoShuffleFileItem {
+  durationSeconds: number
+}
+
 export interface VideoShuffleRenameItem {
   path: string
   newName: string
@@ -227,6 +232,10 @@ export interface VideoShuffleRenameItem {
 
 export interface VideoShuffleRenameResult {
   renamed: number
+}
+
+export interface VideoShuffleDeleteResult {
+  deleted: number
 }
 
 export interface WhisperStatus {

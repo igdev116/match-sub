@@ -8,7 +8,29 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dist:win": "yarn build && electron-builder --win --x64",
+    "dist:mac": "yarn build && electron-builder --mac",
+    "release": "release-it"
+  },
+  "build": {
+    "appId": "com.tao-sub.video-builder",
+    "productName": "Video Builder",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "dist-electron/**/*"],
+    "extraResources": [
+      { "from": "node_modules/ffmpeg-static", "to": "ffmpeg-static", "filter": ["**/*"] }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
@@ -32,7 +54,9 @@
     "@vitejs/plugin-react": "^5.1.0",
     "autoprefixer": "^10.4.0",
     "electron": "^39.2.0",
+    "electron-builder": "^24.13.0",
     "postcss": "^8.5.0",
+    "release-it": "^17.0.0",
     "tailwindcss": "^3.4.0",
     "typescript": "~5.9.0",
     "vite": "^7.2.0",

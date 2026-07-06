@@ -6,6 +6,7 @@ import {
   Card,
   Empty,
   Input,
+  InputNumber,
   Space,
   Table,
   Tag,
@@ -13,17 +14,22 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
+  DeleteOutlined,
   FolderOpenOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
   SwapOutlined,
 } from '@ant-design/icons'
-import type { VideoShuffleFileItem } from '../../electron/types'
+import type { VideoShuffleFileItem, VideoShuffleShortFileItem } from '../../electron/types'
 import { useProjectStore } from '../stores/useProjectStore'
 
 interface VideoShuffleRow extends VideoShuffleFileItem {
   key: string
   newName: string
+}
+
+interface ShortVideoRow extends VideoShuffleShortFileItem {
+  key: string
 }
 
 function cleanError(error: unknown): string {
@@ -41,6 +47,13 @@ function formatSize(bytes: number): string {
     index += 1
   }
   return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds.toFixed(2)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return `${minutes}m ${remainder.toFixed(1).padStart(4, '0')}s`
 }
 
 function makeRows(files: VideoShuffleFileItem[]): VideoShuffleRow[] {
@@ -74,16 +87,24 @@ export default function VideoShufflePage() {
   const updateVideoShuffleSettings = useProjectStore((state) => state.updateVideoShuffleSettings)
   const [videoDirectory, setVideoDirectory] = useState('')
   const [rows, setRows] = useState<VideoShuffleRow[]>([])
+  const [shortRows, setShortRows] = useState<ShortVideoRow[]>([])
+  const [shortVideoThresholdSeconds, setShortVideoThresholdSeconds] = useState(5)
   const [loading, setLoading] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [scanningShortVideos, setScanningShortVideos] = useState(false)
+  const [deletingShortVideos, setDeletingShortVideos] = useState(false)
 
   useEffect(() => {
     setVideoDirectory(activeProject?.videoShuffleSettings.videoDirectory ?? '')
+    setShortVideoThresholdSeconds(
+      activeProject?.videoShuffleSettings.shortVideoThresholdSeconds ?? 5,
+    )
     setRows([])
+    setShortRows([])
   }, [activeProject?.id])
 
-  function saveSettings(videoDirectory: string) {
-    void updateVideoShuffleSettings({ videoDirectory })
+  function saveSettings(patch: Partial<NonNullable<typeof activeProject>['videoShuffleSettings']>) {
+    void updateVideoShuffleSettings(patch)
   }
 
   async function selectDirectory() {
@@ -93,7 +114,8 @@ export default function VideoShufflePage() {
       if (!result) return
       setVideoDirectory(result.directory)
       setRows(makeRows(result.files))
-      saveSettings(result.directory)
+      setShortRows([])
+      saveSettings({ videoDirectory: result.directory })
       message.success(`Đã đọc ${result.files.length} video.`)
     } catch (error) {
       message.error(cleanError(error), 8)
@@ -111,6 +133,7 @@ export default function VideoShufflePage() {
     try {
       const result = await window.videoBuilder.scanVideoShuffleDirectory(videoDirectory)
       setRows(makeRows(result.files))
+      setShortRows([])
       message.success(`Đã đọc ${result.files.length} video.`)
     } catch (error) {
       message.error(cleanError(error), 8)
@@ -159,7 +182,59 @@ export default function VideoShufflePage() {
     })
   }
 
+  async function scanShortVideos() {
+    if (!videoDirectory) {
+      message.warning('Chưa chọn folder video.')
+      return
+    }
+    setScanningShortVideos(true)
+    try {
+      const result = await window.videoBuilder.scanShortVideoShuffleFiles(
+        videoDirectory,
+        shortVideoThresholdSeconds,
+      )
+      setShortRows(result.files.map((file) => ({ ...file, key: file.path })))
+      saveSettings({ shortVideoThresholdSeconds })
+      message.success(`Tìm thấy ${result.files.length} video từ ${shortVideoThresholdSeconds}s trở xuống.`)
+    } catch (error) {
+      message.error(cleanError(error), 8)
+    } finally {
+      setScanningShortVideos(false)
+    }
+  }
+
+  async function confirmDeleteShortVideos() {
+    if (shortRows.length === 0) {
+      message.warning('Chưa có video ngắn để xoá. Bấm "Tìm video ngắn" trước.')
+      return
+    }
+
+    modal.confirm({
+      title: `Xoá ${shortRows.length} video ngắn?`,
+      content: `App sẽ đưa ${shortRows.length} video có thời lượng từ ${shortVideoThresholdSeconds}s trở xuống vào Thùng rác.`,
+      okText: 'Xoá video ngắn',
+      cancelText: 'Hủy',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setDeletingShortVideos(true)
+        try {
+          const result = await window.videoBuilder.deleteVideoShuffleFiles(
+            shortRows.map((row) => row.path),
+          )
+          message.success(`Đã đưa ${result.deleted} video vào Thùng rác.`)
+          setShortRows([])
+          await scanDirectory()
+        } catch (error) {
+          message.error(cleanError(error), 8)
+        } finally {
+          setDeletingShortVideos(false)
+        }
+      },
+    })
+  }
+
   const canRename = rows.length > 0 && rows.every((row) => row.newName)
+  const busy = loading || renaming || scanningShortVideos || deletingShortVideos
   const columns = useMemo<ColumnsType<VideoShuffleRow>>(
     () => [
       {
@@ -193,6 +268,37 @@ export default function VideoShufflePage() {
     ],
     [],
   )
+  const shortColumns = useMemo<ColumnsType<ShortVideoRow>>(
+    () => [
+      {
+        title: '#',
+        width: 72,
+        render: (_, __, index) => <Typography.Text strong>{index + 1}</Typography.Text>,
+      },
+      {
+        title: 'Tên video',
+        dataIndex: 'name',
+        render: (name: string, row) => (
+          <div>
+            <Typography.Text>{name}</Typography.Text>
+            <div className="mt-1 flex gap-2">
+              <Tag>{row.extension.replace('.', '').toUpperCase()}</Tag>
+              <Tag>{formatSize(row.size)}</Tag>
+            </div>
+          </div>
+        ),
+      },
+      {
+        title: 'Thời lượng',
+        dataIndex: 'durationSeconds',
+        width: 160,
+        render: (durationSeconds: number) => (
+          <Tag color="red">{formatDuration(durationSeconds)}</Tag>
+        ),
+      },
+    ],
+    [],
+  )
 
   return (
     <main className="mx-auto max-w-5xl space-y-5 pb-10">
@@ -220,7 +326,7 @@ export default function VideoShufflePage() {
               <Button
                 icon={<ReloadOutlined />}
                 loading={loading}
-                disabled={renaming}
+                disabled={busy}
                 onClick={() => void scanDirectory()}
               >
                 Tải danh sách
@@ -230,7 +336,7 @@ export default function VideoShufflePage() {
               type="primary"
               icon={<FolderOpenOutlined />}
               loading={loading}
-              disabled={renaming}
+              disabled={busy}
               onClick={() => void selectDirectory()}
             >
               Chọn folder video
@@ -243,7 +349,7 @@ export default function VideoShufflePage() {
           <Button
             icon={<FolderOpenOutlined />}
             loading={loading}
-            disabled={renaming}
+            disabled={busy}
             onClick={() => void selectDirectory()}
           >
             Chọn folder
@@ -252,12 +358,86 @@ export default function VideoShufflePage() {
       </Card>
 
       <Card
+        title="Xoá video ngắn"
+        extra={
+          <Space>
+            <Button
+              icon={<ReloadOutlined />}
+              loading={scanningShortVideos}
+              disabled={!videoDirectory || busy}
+              onClick={() => void scanShortVideos()}
+            >
+              Tìm video ngắn
+            </Button>
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              loading={deletingShortVideos}
+              disabled={shortRows.length === 0 || busy}
+              onClick={() => void confirmDeleteShortVideos()}
+            >
+              Xoá video ngắn
+            </Button>
+          </Space>
+        }
+      >
+        <Alert
+          className="mb-4"
+          type="warning"
+          showIcon
+          message="Xoá theo thời lượng"
+          description="Nhập số giây, bấm tìm để preview danh sách video sẽ bị xoá. Khi xác nhận, file được đưa vào Thùng rác."
+        />
+        <div className="mb-4 grid gap-4 md:grid-cols-[260px_1fr]">
+          <div>
+            <Typography.Text strong>Xoá video từ bao nhiêu giây trở xuống</Typography.Text>
+            <InputNumber
+              className="mt-2 !w-full"
+              min={0.1}
+              max={3600}
+              step={0.5}
+              precision={1}
+              addonAfter="giây"
+              value={shortVideoThresholdSeconds}
+              disabled={busy}
+              onChange={(value) => {
+                const nextValue = value ?? 5
+                setShortVideoThresholdSeconds(nextValue)
+                setShortRows([])
+                saveSettings({ shortVideoThresholdSeconds: nextValue })
+              }}
+            />
+          </div>
+          <div className="rounded-lg bg-slate-50 px-4 py-3">
+            <Typography.Text type="secondary">
+              Ví dụ nhập <strong>5s</strong> thì app sẽ tìm video có thời lượng ≤ 5 giây.
+              Video không đọc được duration sẽ được bỏ qua để tránh xoá nhầm.
+            </Typography.Text>
+          </div>
+        </div>
+        {shortRows.length === 0 ? (
+          <Empty
+            description="Chưa có video ngắn trong preview"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        ) : (
+          <Table
+            rowKey="key"
+            columns={shortColumns}
+            dataSource={shortRows}
+            loading={scanningShortVideos}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
+          />
+        )}
+      </Card>
+
+      <Card
         title={`Danh sách video (${rows.length})`}
         extra={
           <Space>
             <Button
               icon={<SwapOutlined />}
-              disabled={rows.length === 0 || loading || renaming}
+              disabled={rows.length === 0 || busy}
               onClick={shuffleVideos}
             >
               Xáo ngẫu nhiên
@@ -267,7 +447,7 @@ export default function VideoShufflePage() {
               danger
               icon={<PlayCircleOutlined />}
               loading={renaming}
-              disabled={!canRename || loading}
+              disabled={!canRename || busy}
               onClick={() => void confirmRename()}
             >
               Đổi tên video
@@ -282,6 +462,7 @@ export default function VideoShufflePage() {
                 <Button
                   icon={<ReloadOutlined />}
                   loading={loading}
+                  disabled={busy}
                   onClick={() => void scanDirectory()}
                 >
                   Tải danh sách
@@ -290,6 +471,7 @@ export default function VideoShufflePage() {
               <Button
                 type="primary"
                 icon={<FolderOpenOutlined />}
+                disabled={busy}
                 onClick={() => void selectDirectory()}
               >
                 Chọn folder video

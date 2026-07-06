@@ -14,8 +14,10 @@ import type {
   ProjectAudioSettings,
   ProjectVideoShuffleSettings,
   VideoShuffleFileItem,
+  VideoShuffleShortFileItem,
   VideoShuffleRenameItem,
   VideoShuffleRenameResult,
+  VideoShuffleDeleteResult,
   WhisperProgress,
 } from './types'
 
@@ -102,6 +104,13 @@ contextBridge.exposeInMainWorld('videoBuilder', {
     }>,
   renameVideoShuffleFiles: (items: VideoShuffleRenameItem[]): Promise<VideoShuffleRenameResult> =>
     ipcRenderer.invoke('videoShuffle:rename', items),
+  scanShortVideoShuffleFiles: (directory: string, thresholdSeconds: number) =>
+    ipcRenderer.invoke('videoShuffle:scanShortVideos', directory, thresholdSeconds) as Promise<{
+      directory: string
+      files: VideoShuffleShortFileItem[]
+    }>,
+  deleteVideoShuffleFiles: (paths: string[]): Promise<VideoShuffleDeleteResult> =>
+    ipcRenderer.invoke('videoShuffle:deleteVideos', paths),
   getWhisperStatus: () => ipcRenderer.invoke('whisper:status'),
   installWhisper: () => ipcRenderer.invoke('whisper:install'),
   downloadWhisperModel: () => ipcRenderer.invoke('whisper:downloadModel'),

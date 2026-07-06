@@ -30,6 +30,7 @@ import type {
   ProjectAudioSettings,
   ProjectVideoShuffleSettings,
   VideoShuffleRenameItem,
+  VideoShuffleShortFileItem,
 } from './types'
 import { readScenes } from './xlsx-reader'
 import {
@@ -315,6 +316,7 @@ function defaultAudioSettings(rootPath: string): ProjectAudioSettings {
 function defaultVideoShuffleSettings(): ProjectVideoShuffleSettings {
   return {
     videoDirectory: '',
+    shortVideoThresholdSeconds: 5,
   }
 }
 
@@ -395,6 +397,7 @@ function getProjectState(): ProjectState {
       project.audioSettings.audioOutputDirectory &&
       project.audioSettings.srtOutputPath &&
       project.videoShuffleSettings &&
+      Number.isFinite(project.videoShuffleSettings.shortVideoThresholdSeconds) &&
       Number.isFinite(project.videoSettings.motionZoomOutStartPercent) &&
       Array.isArray(project.videoSettings.motionSequence) &&
       project.videoSettings.motionSequence.length > 0
@@ -429,7 +432,10 @@ function getProjectState(): ProjectState {
                 },
               ],
       },
-      videoShuffleSettings: project.videoShuffleSettings || defaultVideoShuffleSettings(),
+      videoShuffleSettings: {
+        ...defaultVideoShuffleSettings(),
+        ...project.videoShuffleSettings,
+      },
     }
   })
   if (normalized) preferences.set('projects', projects)
@@ -502,6 +508,24 @@ async function getAudioDurationSeconds(filePath: string): Promise<number | null>
   }
 }
 
+async function getMediaDurationSeconds(filePath: string): Promise<number | null> {
+  try {
+    const { stdout } = await runCommand('ffprobe', [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
+      filePath,
+    ])
+    const duration = Number.parseFloat(stdout.trim())
+    return Number.isFinite(duration) ? duration : null
+  } catch {
+    return null
+  }
+}
+
 async function listAudioFiles(directory: string): Promise<AudioFileItem[]> {
   if (!directory || !fs.existsSync(directory)) return []
   const entries = await fs.promises.readdir(directory, { withFileTypes: true })
@@ -542,6 +566,47 @@ async function listVideoFiles(directory: string) {
       }
     }),
   )
+}
+
+async function listShortVideoFiles(
+  directory: string,
+  thresholdSeconds: number,
+): Promise<VideoShuffleShortFileItem[]> {
+  if (!Number.isFinite(thresholdSeconds) || thresholdSeconds <= 0 || thresholdSeconds > 3600) {
+    throw new Error('Ngưỡng xoá video phải từ 0.1 đến 3600 giây.')
+  }
+
+  const files = await listVideoFiles(directory)
+  const checked = await Promise.all(
+    files.map(async (file) => ({
+      ...file,
+      durationSeconds: await getMediaDurationSeconds(file.path),
+    })),
+  )
+  return checked
+    .filter(
+      (file): file is VideoShuffleShortFileItem =>
+        file.durationSeconds !== null && file.durationSeconds <= thresholdSeconds,
+    )
+    .sort((a, b) => a.durationSeconds - b.durationSeconds || sortByName(a.path, b.path))
+}
+
+async function deleteVideoFiles(paths: string[]) {
+  if (paths.length === 0) throw new Error('Chưa có video để xoá.')
+  const uniquePaths = [...new Set(paths.map((filePath) => path.resolve(filePath)))]
+
+  for (const filePath of uniquePaths) {
+    if (!fs.existsSync(filePath)) throw new Error(`Không tìm thấy file: ${path.basename(filePath)}`)
+    if (!videoExtensions.has(path.extname(filePath).toLowerCase())) {
+      throw new Error(`File không phải video hỗ trợ: ${path.basename(filePath)}`)
+    }
+  }
+
+  for (const filePath of uniquePaths) {
+    await shell.trashItem(filePath)
+  }
+
+  return { deleted: uniquePaths.length }
 }
 
 async function renameVideoFiles(items: VideoShuffleRenameItem[]) {
@@ -973,6 +1038,18 @@ app.whenReady().then(() => {
 
   ipcMain.handle('videoShuffle:rename', async (_event, items: VideoShuffleRenameItem[]) =>
     renameVideoFiles(items),
+  )
+
+  ipcMain.handle(
+    'videoShuffle:scanShortVideos',
+    async (_event, directory: string, thresholdSeconds: number) => ({
+      directory,
+      files: await listShortVideoFiles(directory, thresholdSeconds),
+    }),
+  )
+
+  ipcMain.handle('videoShuffle:deleteVideos', async (_event, paths: string[]) =>
+    deleteVideoFiles(paths),
   )
 
   ipcMain.handle('audio:getDurations', async (_event, paths: string[]) =>

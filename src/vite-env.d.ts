@@ -20,9 +20,11 @@ import type {
   ProjectVideoShuffleSettings,
   WhisperProgress,
   WhisperStatus,
+  VideoShuffleDeleteResult,
   VideoShuffleFileItem,
   VideoShuffleRenameItem,
   VideoShuffleRenameResult,
+  VideoShuffleShortFileItem,
 } from '../electron/types'
 
 declare global {
@@ -80,6 +82,11 @@ declare global {
       renameVideoShuffleFiles: (
         items: VideoShuffleRenameItem[],
       ) => Promise<VideoShuffleRenameResult>
+      scanShortVideoShuffleFiles: (
+        directory: string,
+        thresholdSeconds: number,
+      ) => Promise<{ directory: string; files: VideoShuffleShortFileItem[] }>
+      deleteVideoShuffleFiles: (paths: string[]) => Promise<VideoShuffleDeleteResult>
       getWhisperStatus: () => Promise<WhisperStatus>
       installWhisper: () => Promise<void>
       downloadWhisperModel: () => Promise<void>
