@@ -198,12 +198,24 @@ export default function AudioMergePage() {
     [items, pageSize, pageStart],
   )
   const missingRequirements = [
-    items.length < 2 ? 'chọn ít nhất 2 file audio' : '',
-    !outputPath ? 'chọn file MP3 output' : '',
-    createSrt && !srtOutputPath ? 'chọn file SRT output' : '',
-    createSrt && !whisperStatus?.available ? 'cài whisper.cpp' : '',
-    createSrt && !whisperStatus?.modelAvailable ? 'tải model base' : '',
-  ].filter(Boolean)
+    ...new Set(
+      [
+        items.length < 2 ? 'chọn ít nhất 2 file audio' : '',
+        !outputPath ? 'chọn file MP3 output' : '',
+        createSrt && !srtOutputPath ? 'chọn file SRT output' : '',
+        createSrt && !whisperStatus?.available
+          ? whisperStatus?.repairMessage
+            ? 'cài lại ứng dụng'
+            : 'cài whisper.cpp'
+          : '',
+        createSrt && !whisperStatus?.modelAvailable
+          ? whisperStatus?.repairMessage
+            ? 'cài lại ứng dụng'
+            : 'tải model base'
+          : '',
+      ].filter(Boolean),
+    ),
+  ]
 
   useEffect(() => {
     const lastPage = Math.max(1, Math.ceil(items.length / pageSize))
@@ -611,12 +623,20 @@ export default function AudioMergePage() {
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-3">
               <Tag color={whisperStatus?.available ? 'success' : 'error'}>
-                {whisperStatus?.available ? 'whisper.cpp sẵn sàng' : 'Chưa cài whisper.cpp'}
+                {whisperStatus?.available
+                  ? whisperStatus.executableSource === 'bundled'
+                    ? 'Whisper đi kèm app sẵn sàng'
+                    : 'whisper.cpp sẵn sàng'
+                  : 'Thiếu whisper.cpp'}
               </Tag>
               <Tag color={whisperStatus?.modelAvailable ? 'success' : 'warning'}>
-                {whisperStatus?.modelAvailable ? 'Model base sẵn sàng' : 'Chưa tải model base'}
+                {whisperStatus?.modelAvailable
+                  ? whisperStatus.modelSource === 'bundled'
+                    ? 'Model base đi kèm app sẵn sàng'
+                    : 'Model base sẵn sàng'
+                  : 'Thiếu model base'}
               </Tag>
-              {!whisperStatus?.available && (
+              {!whisperStatus?.available && whisperStatus?.installSupported && (
                 <Button
                   type="primary"
                   loading={whisperSetupBusy}
@@ -626,7 +646,7 @@ export default function AudioMergePage() {
                   Cài bằng Homebrew
                 </Button>
               )}
-              {!whisperStatus?.modelAvailable && (
+              {!whisperStatus?.modelAvailable && whisperStatus?.downloadSupported && (
                 <Button
                   loading={whisperSetupBusy}
                   disabled={processing}
@@ -636,6 +656,15 @@ export default function AudioMergePage() {
                 </Button>
               )}
             </div>
+
+            {whisperStatus?.repairMessage && (
+              <Alert
+                type="error"
+                showIcon
+                message="Bộ cài không đầy đủ"
+                description={whisperStatus.repairMessage}
+              />
+            )}
 
             {whisperProgress && (
               <div>

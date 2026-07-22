@@ -22,11 +22,38 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Cache Windows media runtime
+        uses: actions/cache@v4
+        with:
+          path: .runtime-cache
+          key: windows-runtime-whisper-1.8.6-base-v1
+
       - name: Build & Package Windows
         run: yarn dist:win
         env:
           # Không để electron-builder tự publish, mình upload thủ công ở bước sau
           GH_TOKEN: ""
+
+      - name: Verify bundled media runtime
+        shell: pwsh
+        run: |
+          $runtime = "release/win-unpacked/resources/runtime"
+          $required = @(
+            "$runtime/ffmpeg.exe",
+            "$runtime/ffprobe.exe",
+            "$runtime/whisper/whisper-cli.exe",
+            "$runtime/whisper/whisper.dll",
+            "$runtime/whisper/ggml.dll",
+            "$runtime/whisper/ggml-base.dll",
+            "$runtime/whisper/ggml-cpu.dll",
+            "$runtime/models/ggml-base.bin"
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) { throw "Missing bundled runtime file: $file" }
+          }
+          & "$runtime/ffmpeg.exe" -version
+          & "$runtime/ffprobe.exe" -version
+          & "$runtime/whisper/whisper-cli.exe" --help
 
       - name: Upload .exe to Release
         uses: softprops/action-gh-release@v2

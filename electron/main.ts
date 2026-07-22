@@ -33,6 +33,7 @@ import type {
   VideoShuffleShortFileItem,
 } from './types'
 import { readScenes } from './xlsx-reader'
+import { ffprobeExecutable } from './runtime-binaries'
 import {
   downloadBaseModel,
   getWhisperStatus,
@@ -492,7 +493,7 @@ function runCommand(command: string, args: string[]): Promise<{ stdout: string; 
 
 async function getAudioDurationSeconds(filePath: string): Promise<number | null> {
   try {
-    const { stdout } = await runCommand('ffprobe', [
+    const { stdout } = await runCommand(ffprobeExecutable(), [
       '-v',
       'error',
       '-show_entries',
@@ -510,7 +511,7 @@ async function getAudioDurationSeconds(filePath: string): Promise<number | null>
 
 async function getMediaDurationSeconds(filePath: string): Promise<number | null> {
   try {
-    const { stdout } = await runCommand('ffprobe', [
+    const { stdout } = await runCommand(ffprobeExecutable(), [
       '-v',
       'error',
       '-show_entries',

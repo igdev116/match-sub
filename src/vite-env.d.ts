@@ -6,6 +6,7 @@ import type {
   AudioMergeConfig,
   BuildConfig,
   BuildProgress,
+  FFmpegStatus,
   ImagePreviewItem,
   PreviewConfig,
   ProjectDefaults,
@@ -62,7 +63,7 @@ declare global {
       selectAudioOutputDirectory: (defaultPath?: string) => Promise<string | null>
       showInFolder: (path: string) => Promise<boolean>
       getDefaults: () => Promise<ProjectDefaults>
-      checkFFmpeg: () => Promise<{ available: boolean; version?: string }>
+      checkFFmpeg: () => Promise<FFmpegStatus>
       previewExcel: (path: string) => Promise<Scene[]>
       previewSrt: (path: string) => Promise<SrtEntry[]>
       previewImages: (path: string) => Promise<ImagePreviewItem[]>

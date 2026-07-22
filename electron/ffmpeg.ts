@@ -7,8 +7,10 @@ import type {
   AudioMergeConfig,
   BuildConfig,
   BuildProgress,
+  FFmpegStatus,
   SampleBuildConfig,
 } from './types'
+import { ffmpegExecutable, isPackagedWindows } from './runtime-binaries'
 
 type ProgressListener = (progress: BuildProgress) => void
 type PerformanceSettings = {
@@ -91,15 +93,21 @@ function run(command: string, args: string[], onLog?: (line: string) => void): P
   })
 }
 
-export async function checkFFmpeg(): Promise<{ available: boolean; version?: string }> {
+export async function checkFFmpeg(): Promise<FFmpegStatus> {
   try {
     let version = ''
-    await run('ffmpeg', ['-version'], (line) => {
+    await run(ffmpegExecutable(), ['-version'], (line) => {
       if (!version) version = line
     })
-    return { available: true, version }
+    return { available: true, version, bundled: isPackagedWindows() }
   } catch {
-    return { available: false }
+    return {
+      available: false,
+      bundled: isPackagedWindows(),
+      repairMessage: isPackagedWindows()
+        ? 'Bộ cài đang thiếu FFmpeg. Hãy cài lại ứng dụng bằng installer đầy đủ.'
+        : 'Không tìm thấy FFmpeg trong hệ thống.',
+    }
   }
 }
 
@@ -417,7 +425,7 @@ export async function buildVideo(
         })
         try {
           await run(
-            'ffmpeg',
+            ffmpegExecutable(),
             sceneArgs(
               item,
               clipPaths[index],
@@ -470,7 +478,7 @@ export async function buildVideo(
         .map((clipPath) => `file '${clipPath.replaceAll("'", "'\\''")}'`)
         .join('\n')
       fs.writeFileSync(concatPath, concatContent, 'utf8')
-      await run('ffmpeg', [
+      await run(ffmpegExecutable(), [
         '-y',
         '-f',
         'concat',
@@ -586,7 +594,7 @@ export async function buildSampleVideo(config: SampleBuildConfig): Promise<strin
     srtEntries: [],
   }
   await run(
-    'ffmpeg',
+    ffmpegExecutable(),
     sceneArgs(
       item,
       config.outputPath,
@@ -663,7 +671,7 @@ export async function mergeAudio(config: AudioMergeConfig): Promise<void> {
           ? ['-c:a', 'aac', '-b:a', '256k']
           : ['-c:a', 'libmp3lame', '-b:a', '256k']
 
-  await run('ffmpeg', [
+  await run(ffmpegExecutable(), [
     ...args,
     '-filter_complex',
     filters.join(';'),
@@ -675,7 +683,7 @@ export async function mergeAudio(config: AudioMergeConfig): Promise<void> {
 }
 
 export async function convertAudioForWhisper(inputPath: string, outputPath: string): Promise<void> {
-  await run('ffmpeg', [
+  await run(ffmpegExecutable(), [
     '-y',
     '-i',
     inputPath,

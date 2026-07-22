@@ -198,6 +198,13 @@ export interface BuildProgress {
   outputPath?: string
 }
 
+export interface FFmpegStatus {
+  available: boolean
+  version?: string
+  bundled: boolean
+  repairMessage?: string
+}
+
 export interface AudioMergeConfig {
   files: string[]
   pauseSeconds: number
@@ -241,9 +248,16 @@ export interface VideoShuffleDeleteResult {
 export interface WhisperStatus {
   available: boolean
   executablePath: string
+  executableSource: 'bundled' | 'system' | 'missing'
   modelAvailable: boolean
   modelPath: string
+  modelSource: 'bundled' | 'userData' | 'missing'
   modelSize: number
+  platform: string
+  packaged: boolean
+  installSupported: boolean
+  downloadSupported: boolean
+  repairMessage?: string
 }
 
 export interface WhisperProgress {

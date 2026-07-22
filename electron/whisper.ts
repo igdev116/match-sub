@@ -4,12 +4,18 @@ import os from 'node:os'
 import path from 'node:path'
 import { app } from 'electron'
 import { convertAudioForWhisper } from './ffmpeg'
+import {
+  bundledWhisperDirectory,
+  bundledWhisperExecutable,
+  bundledWhisperModel,
+  isPackagedWindows,
+} from './runtime-binaries'
 import type { AudioMergeConfig, WhisperProgress, WhisperStatus } from './types'
 
 const MODEL_URL =
   'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin'
 const MODEL_SIZE = 147951465
-const executableCandidates = [
+const systemExecutableCandidates = [
   'whisper-cli',
   '/opt/homebrew/bin/whisper-cli',
   '/usr/local/bin/whisper-cli',
@@ -19,13 +25,24 @@ const executableCandidates = [
 
 type ProgressListener = (progress: WhisperProgress) => void
 
-function modelPath(): string {
+function userModelPath(): string {
   return path.join(app.getPath('userData'), 'models', 'ggml-base.bin')
 }
 
 function runCapture(command: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const bundledDirectory = bundledWhisperDirectory()
+    const usesBundledExecutable = path.isAbsolute(command) && path.dirname(command) === bundledDirectory
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: usesBundledExecutable ? bundledDirectory : undefined,
+      env: usesBundledExecutable
+        ? {
+            ...process.env,
+            PATH: `${bundledDirectory}${path.delimiter}${process.env.PATH || ''}`,
+          }
+        : process.env,
+    })
     let output = ''
     child.stdout.on('data', (chunk: Buffer) => {
       output += chunk.toString()
@@ -41,32 +58,58 @@ function runCapture(command: string, args: string[]): Promise<string> {
   })
 }
 
-async function findExecutable(): Promise<string> {
-  for (const candidate of executableCandidates) {
+async function findExecutable(): Promise<{
+  path: string
+  source: WhisperStatus['executableSource']
+}> {
+  const bundled = bundledWhisperExecutable()
+  const candidates = bundled
+    ? [{ path: bundled, source: 'bundled' as const }]
+    : isPackagedWindows()
+      ? []
+      : systemExecutableCandidates.map((candidate) => ({ path: candidate, source: 'system' as const }))
+
+  for (const candidate of candidates) {
     try {
-      await runCapture(candidate, ['--help'])
+      await runCapture(candidate.path, ['--help'])
       return candidate
     } catch {
       // Check the next common installation path.
     }
   }
-  return ''
+  return { path: '', source: 'missing' }
 }
 
 export async function getWhisperStatus(): Promise<WhisperStatus> {
-  const executablePath = await findExecutable()
-  const targetModel = modelPath()
+  const executable = await findExecutable()
+  const packagedWindows = isPackagedWindows()
+  const bundledModel = bundledWhisperModel()
+  const downloadedModel = userModelPath()
+  const targetModel = bundledModel || (packagedWindows ? '' : downloadedModel)
   const modelAvailable = fs.existsSync(targetModel) && fs.statSync(targetModel).size > 100_000_000
+  const repairMessage = packagedWindows && (!executable.path || !modelAvailable)
+    ? 'Bộ cài đang thiếu thành phần xử lý phụ đề. Hãy cài lại ứng dụng bằng installer đầy đủ.'
+    : undefined
   return {
-    available: Boolean(executablePath),
-    executablePath,
+    available: Boolean(executable.path),
+    executablePath: executable.path,
+    executableSource: executable.source,
     modelAvailable,
     modelPath: targetModel,
+    modelSource: bundledModel ? 'bundled' : modelAvailable ? 'userData' : 'missing',
     modelSize: MODEL_SIZE,
+    platform: process.platform,
+    packaged: app.isPackaged,
+    installSupported: process.platform === 'darwin',
+    downloadSupported: !packagedWindows,
+    repairMessage,
   }
 }
 
 export async function installWhisper(onProgress: ProgressListener): Promise<void> {
+  if (isPackagedWindows()) {
+    throw new Error('Bộ cài đang thiếu whisper.cpp. Hãy cài lại ứng dụng bằng installer đầy đủ.')
+  }
   if (process.platform !== 'darwin') {
     throw new Error('Tự động cài hiện chỉ hỗ trợ macOS.')
   }
@@ -80,7 +123,10 @@ export async function installWhisper(onProgress: ProgressListener): Promise<void
 }
 
 export async function downloadBaseModel(onProgress: ProgressListener): Promise<void> {
-  const target = modelPath()
+  if (isPackagedWindows()) {
+    throw new Error('Bộ cài đang thiếu model Whisper. Hãy cài lại ứng dụng bằng installer đầy đủ.')
+  }
+  const target = userModelPath()
   const temporary = `${target}.download`
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.rmSync(temporary, { force: true })
@@ -127,8 +173,12 @@ export async function transcribeToSrt(
   onProgress: ProgressListener,
 ): Promise<string> {
   const status = await getWhisperStatus()
-  if (!status.available) throw new Error('Chưa cài whisper.cpp.')
-  if (!status.modelAvailable) throw new Error('Chưa tải model Whisper base.')
+  if (!status.available || !status.modelAvailable) {
+    throw new Error(
+      status.repairMessage ||
+        (!status.available ? 'Chưa cài whisper.cpp.' : 'Chưa tải model Whisper base.'),
+    )
+  }
 
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'tao-sub-whisper-'))
   const wavPath = path.join(temporaryDirectory, 'audio.wav')

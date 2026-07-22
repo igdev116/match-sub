@@ -1,5 +1,7 @@
 node_modules
 dist
 dist-electron
+runtime
+.runtime-cache
 *.log
 .DS_Store

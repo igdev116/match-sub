@@ -189,7 +189,11 @@ export default function BuildPage() {
   const [sampleImagePath, setSampleImagePath] = useState('')
   const [sampleVideoPath, setSampleVideoPath] = useState('')
   const [sampleBuilding, setSampleBuilding] = useState(false)
-  const [ffmpeg, setFfmpeg] = useState<{ checking: boolean; available: boolean | null }>({
+  const [ffmpeg, setFfmpeg] = useState<{
+    checking: boolean
+    available: boolean | null
+    repairMessage?: string
+  }>({
     checking: true,
     available: null,
   })
@@ -205,8 +209,20 @@ export default function BuildPage() {
 
   useEffect(() => {
     void window.videoBuilder.checkFFmpeg()
-      .then((ffmpegResult) => setFfmpeg({ checking: false, available: ffmpegResult.available }))
-      .catch(() => setFfmpeg({ checking: false, available: false }))
+      .then((ffmpegResult) =>
+        setFfmpeg({
+          checking: false,
+          available: ffmpegResult.available,
+          repairMessage: ffmpegResult.repairMessage,
+        }),
+      )
+      .catch(() =>
+        setFfmpeg({
+          checking: false,
+          available: false,
+          repairMessage: 'Không thể kiểm tra FFmpeg.',
+        }),
+      )
     return window.videoBuilder.onBuildProgress((nextProgress) => {
       setProgress(nextProgress)
       if (['complete', 'stopped', 'error'].includes(nextProgress.phase)) {
@@ -954,7 +970,7 @@ export default function BuildPage() {
           {!ffmpeg.checking && !ffmpeg.available && (
             <Card className="border-red-200 bg-red-50">
               <Typography.Text type="danger">
-                Không tìm thấy FFmpeg trong PATH. Trên macOS, cài bằng lệnh: brew install ffmpeg
+                {ffmpeg.repairMessage || 'Không tìm thấy FFmpeg.'}
               </Typography.Text>
             </Card>
           )}
