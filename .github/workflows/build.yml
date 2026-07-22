@@ -46,6 +46,10 @@ jobs:
             "$runtime/whisper/ggml.dll",
             "$runtime/whisper/ggml-base.dll",
             "$runtime/whisper/ggml-cpu.dll",
+            "$runtime/whisper/msvcp140.dll",
+            "$runtime/whisper/vcruntime140.dll",
+            "$runtime/whisper/vcruntime140_1.dll",
+            "$runtime/whisper/vcomp140.dll",
             "$runtime/models/ggml-base.bin"
           )
           foreach ($file in $required) {

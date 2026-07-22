@@ -18,6 +18,14 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const projectDirectory = path.resolve(scriptDirectory, '..')
 const cacheDirectory = path.join(projectDirectory, '.runtime-cache')
 const runtimeDirectory = path.join(projectDirectory, 'runtime', 'win32-x64')
+const windowsDirectory = process.env.WINDIR || process.env.SystemRoot || 'C:\\Windows'
+const windowsSystemDirectory = path.join(windowsDirectory, 'System32')
+const visualCppRuntimeFiles = [
+  'msvcp140.dll',
+  'vcruntime140.dll',
+  'vcruntime140_1.dll',
+  'vcomp140.dll',
+]
 
 async function fileHasMinimumSize(filePath, minimumSize) {
   try {
@@ -107,6 +115,11 @@ try {
     await requireFile(source, fileName)
     await copyFile(source, path.join(runtimeDirectory, 'whisper', fileName))
   }
+  for (const fileName of visualCppRuntimeFiles) {
+    const source = path.join(windowsSystemDirectory, fileName)
+    await requireFile(source, fileName)
+    await copyFile(source, path.join(runtimeDirectory, 'whisper', fileName))
+  }
 } finally {
   await rm(extractionDirectory, { recursive: true, force: true })
 }
@@ -123,6 +136,7 @@ const requiredRuntimeFiles = [
   'whisper/ggml.dll',
   'whisper/ggml-base.dll',
   'whisper/ggml-cpu.dll',
+  ...visualCppRuntimeFiles.map((fileName) => `whisper/${fileName}`),
   'models/ggml-base.bin',
 ]
 for (const relativePath of requiredRuntimeFiles) {
