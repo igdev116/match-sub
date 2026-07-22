@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, useTransition } from 'reac
 import { App as AntApp, ConfigProvider, Spin } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import AppShell, { type AppMenuKey } from './layouts/AppShell'
+import TopProgressBar from './components/TopProgressBar'
 import ProjectPage from './pages/ProjectPage'
 import { useProjectStore } from './stores/useProjectStore'
 import { useAudioMergeStore } from './stores/useAudioMergeStore'
@@ -65,7 +66,7 @@ export default function App() {
   const [visitedMenus, setVisitedMenus] = useState<Set<AppMenuKey>>(
     () => new Set<AppMenuKey>(['project-manager']),
   )
-  const [, startTransition] = useTransition()
+  const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
     void loadProjects().then((state) => {
@@ -147,6 +148,7 @@ export default function App() {
       }}
     >
       <AntApp>
+        <TopProgressBar active={isPending} />
         <AudioMergeRuntimeBridge />
         <AppShell
           activeKey={activeMenu}

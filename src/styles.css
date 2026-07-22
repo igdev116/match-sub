@@ -65,6 +65,21 @@ input {
   background: rgba(148, 163, 184, 0.7);
 }
 
+/* Top Progress Bar (NProgress-style) */
+.top-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  height: 3px;
+  background: linear-gradient(90deg, #eb4e43, #f97066, #eb4e43);
+  transform-origin: left;
+  transition: transform 0.15s ease-out, opacity 0.25s ease;
+  box-shadow: 0 0 8px rgba(235, 78, 67, 0.5), 0 0 3px rgba(235, 78, 67, 0.3);
+  border-radius: 0 2px 2px 0;
+}
+
 .app-sidebar {
   position: relative;
   background: #0f172a !important;
