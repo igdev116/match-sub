@@ -3,6 +3,7 @@ import type {
   AlignmentPreviewResult,
   AudioFileItem,
   AudioMergeConfig,
+  AudioMergeProgress,
   BuildConfig,
   BuildProgress,
   PreviewConfig,
@@ -119,6 +120,12 @@ contextBridge.exposeInMainWorld('videoBuilder', {
       listener(progress)
     ipcRenderer.on('whisper:progress', handler)
     return () => ipcRenderer.removeListener('whisper:progress', handler)
+  },
+  onAudioMergeProgress: (listener: (progress: AudioMergeProgress) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: AudioMergeProgress) =>
+      listener(progress)
+    ipcRenderer.on('audio:progress', handler)
+    return () => ipcRenderer.removeListener('audio:progress', handler)
   },
   onBuildProgress: (listener: (progress: BuildProgress) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, progress: BuildProgress) => listener(progress)

@@ -43,7 +43,11 @@ const alternatingCornerInOutEffects: MotionEffect[] = [
   'zoom-out-top-right',
 ]
 
-function resolveMotionEffect(config: Pick<BuildConfig, 'motionEffect' | 'motionSequence'>, index: number): MotionEffect {
+function resolveMotionEffect(
+  config: Pick<BuildConfig, 'motionEnabled' | 'motionEffect' | 'motionSequence'>,
+  index: number,
+): MotionEffect {
+  if (config.motionEnabled === false) return 'none'
   const sequence = config.motionSequence?.filter((item) => item.effect)
   const effect = sequence?.length
     ? sequence[index % sequence.length].effect
@@ -322,42 +326,48 @@ export async function buildVideo(
   if (!Number.isInteger(config.fps) || config.fps < 1 || config.fps > 120) {
     throw new Error('FPS phải là số nguyên từ 1 đến 120.')
   }
+  const motionEnabled = config.motionEnabled !== false
   const motionZoomPercent = config.motionZoomPercent ?? 8
   if (
-    !Number.isFinite(motionZoomPercent) ||
-    motionZoomPercent < 0 ||
-    motionZoomPercent > 50
+    motionEnabled &&
+    (!Number.isFinite(motionZoomPercent) ||
+      motionZoomPercent < 0 ||
+      motionZoomPercent > 50)
   ) {
     throw new Error('Mức zoom phải từ 0% đến 50%.')
   }
   const motionZoomOutStartPercent = config.motionZoomOutStartPercent ?? 12
   if (
-    !Number.isFinite(motionZoomOutStartPercent) ||
-    motionZoomOutStartPercent < 0 ||
-    motionZoomOutStartPercent > 50
+    motionEnabled &&
+    (!Number.isFinite(motionZoomOutStartPercent) ||
+      motionZoomOutStartPercent < 0 ||
+      motionZoomOutStartPercent > 50)
   ) {
     throw new Error('Mức zoom khởi tạo khi thu nhỏ phải từ 0% đến 50%.')
   }
   const motionHoldPercent = config.motionHoldPercent ?? 20
   const motionHoldMode = config.motionHoldMode ?? 'percent'
   if (
-    !Number.isFinite(motionHoldPercent) ||
-    motionHoldPercent < 0 ||
-    motionHoldPercent > 90
+    motionEnabled &&
+    (!Number.isFinite(motionHoldPercent) ||
+      motionHoldPercent < 0 ||
+      motionHoldPercent > 90)
   ) {
     throw new Error('Tỷ lệ giữ khung hình cuối phải từ 0% đến 90%.')
   }
   const motionHoldSeconds = config.motionHoldSeconds ?? 2
   if (
+    motionEnabled &&
     motionHoldMode !== 'percent' &&
     motionHoldMode !== 'seconds'
   ) {
     throw new Error('Kiểu giữ khung hình cuối không hợp lệ.')
   }
   if (
-    !Number.isFinite(motionHoldSeconds) ||
-    motionHoldSeconds < 0 ||
-    motionHoldSeconds > 300
+    motionEnabled &&
+    (!Number.isFinite(motionHoldSeconds) ||
+      motionHoldSeconds < 0 ||
+      motionHoldSeconds > 300)
   ) {
     throw new Error('Số giây giữ khung hình cuối phải từ 0 đến 300 giây.')
   }
@@ -529,40 +539,46 @@ export async function buildSampleVideo(config: SampleBuildConfig): Promise<strin
   if (!Number.isInteger(config.fps) || config.fps < 1 || config.fps > 120) {
     throw new Error('FPS phải là số nguyên từ 1 đến 120.')
   }
+  const motionEnabled = config.motionEnabled !== false
   if (
-    !Number.isFinite(config.motionZoomPercent) ||
-    config.motionZoomPercent < 0 ||
-    config.motionZoomPercent > 50
+    motionEnabled &&
+    (!Number.isFinite(config.motionZoomPercent) ||
+      config.motionZoomPercent < 0 ||
+      config.motionZoomPercent > 50)
   ) {
     throw new Error('Mức zoom phải từ 0% đến 50%.')
   }
   const motionZoomOutStartPercent = config.motionZoomOutStartPercent ?? 12
   if (
-    !Number.isFinite(motionZoomOutStartPercent) ||
-    motionZoomOutStartPercent < 0 ||
-    motionZoomOutStartPercent > 50
+    motionEnabled &&
+    (!Number.isFinite(motionZoomOutStartPercent) ||
+      motionZoomOutStartPercent < 0 ||
+      motionZoomOutStartPercent > 50)
   ) {
     throw new Error('Mức zoom khởi tạo khi thu nhỏ phải từ 0% đến 50%.')
   }
   if (
-    !Number.isFinite(config.motionHoldPercent) ||
-    config.motionHoldPercent < 0 ||
-    config.motionHoldPercent > 90
+    motionEnabled &&
+    (!Number.isFinite(config.motionHoldPercent) ||
+      config.motionHoldPercent < 0 ||
+      config.motionHoldPercent > 90)
   ) {
     throw new Error('Tỷ lệ giữ khung hình cuối phải từ 0% đến 90%.')
   }
   const motionHoldMode = config.motionHoldMode ?? 'percent'
   const motionHoldSeconds = config.motionHoldSeconds ?? 2
   if (
+    motionEnabled &&
     motionHoldMode !== 'percent' &&
     motionHoldMode !== 'seconds'
   ) {
     throw new Error('Kiểu giữ khung hình cuối không hợp lệ.')
   }
   if (
-    !Number.isFinite(motionHoldSeconds) ||
-    motionHoldSeconds < 0 ||
-    motionHoldSeconds > 300
+    motionEnabled &&
+    (!Number.isFinite(motionHoldSeconds) ||
+      motionHoldSeconds < 0 ||
+      motionHoldSeconds > 300)
   ) {
     throw new Error('Số giây giữ khung hình cuối phải từ 0 đến 300 giây.')
   }

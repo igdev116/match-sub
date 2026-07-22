@@ -69,6 +69,7 @@ export interface ProjectVideoSettings {
   ffmpegThreads: number
   scenePauseMs: number
   resolution: string
+  motionEnabled: boolean
   motionEffect: BuildConfig['motionEffect']
   motionSequence: MotionSequenceItem[]
   motionZoomPercent: number
@@ -148,6 +149,7 @@ export interface BuildConfig extends PreviewConfig {
   ffmpegThreads?: number
   scenePauseMs?: number
   resolution: string
+  motionEnabled?: boolean
   motionEffect:
     | 'auto'
     | 'none'
@@ -179,6 +181,7 @@ export interface SampleBuildConfig {
   resolution: string
   buildPerformance?: BuildConfig['buildPerformance']
   ffmpegThreads?: number
+  motionEnabled?: boolean
   motionEffect: BuildConfig['motionEffect']
   motionSequence?: MotionSequenceItem[]
   motionZoomPercent: number
@@ -206,6 +209,8 @@ export interface FFmpegStatus {
 }
 
 export interface AudioMergeConfig {
+  jobId: string
+  projectId: string
   files: string[]
   pauseSeconds: number
   outputPath: string
@@ -213,6 +218,17 @@ export interface AudioMergeConfig {
   createSrt: boolean
   language: string
   whisperThreads: number
+}
+
+export interface AudioMergeProgress {
+  jobId: string
+  projectId: string
+  phase: 'merging' | 'normalizing' | 'transcribing' | 'complete' | 'error'
+  percent: number
+  message: string
+  outputPath?: string
+  srtOutputPath?: string
+  error?: string
 }
 
 export interface AudioFileItem {

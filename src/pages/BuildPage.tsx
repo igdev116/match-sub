@@ -10,6 +10,7 @@ import {
   Radio,
   Select,
   Space,
+  Switch,
   Typography,
 } from 'antd'
 import {
@@ -171,6 +172,7 @@ export default function BuildPage() {
   const ffmpegThreads = videoSettings?.ffmpegThreads ?? 1
   const scenePauseMs = videoSettings?.scenePauseMs ?? 250
   const resolution = videoSettings?.resolution ?? '1920x1080'
+  const motionEnabled = videoSettings?.motionEnabled ?? true
   const motionEffect = videoSettings?.motionEffect ?? 'zoom-right'
   const motionSequence = useMemo<MotionSequenceItem[]>(
     () => {
@@ -550,6 +552,7 @@ export default function BuildPage() {
       ffmpegThreads,
       scenePauseMs,
       resolution,
+      motionEnabled,
       motionEffect,
       motionSequence,
       motionZoomPercent,
@@ -586,6 +589,7 @@ export default function BuildPage() {
         resolution,
         buildPerformance,
         ffmpegThreads,
+        motionEnabled,
         motionEffect,
         motionSequence,
         motionZoomPercent,
@@ -803,13 +807,26 @@ export default function BuildPage() {
               </div>
             </div>
             <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
-              <div className="mb-4">
-                <Typography.Text strong>Chuyển động ảnh</Typography.Text>
-                <Typography.Text className="mt-1 block" type="secondary">
-                  Chọn preset chuyển động, rồi chỉnh riêng mức zoom vào và mức bắt đầu khi zoom từ trong ra.
-                </Typography.Text>
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <Typography.Text strong>Chuyển động ảnh</Typography.Text>
+                  <Typography.Text className="mt-1 block" type="secondary">
+                    {motionEnabled
+                      ? 'Chọn chuyển động, mức zoom và thời gian giữ khung hình cuối.'
+                      : 'Ảnh sẽ đứng yên trong toàn bộ scene; build nhẹ và ít nóng máy hơn.'}
+                  </Typography.Text>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Typography.Text strong>Sử dụng chuyển động ảnh</Typography.Text>
+                  <Switch
+                    checked={motionEnabled}
+                    disabled={busy}
+                    onChange={(checked) => saveVideoSettings({ motionEnabled: checked })}
+                  />
+                </div>
               </div>
-              <div className="grid gap-5 md:grid-cols-2">
+              {motionEnabled ? (
+                <div className="grid gap-5 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -932,7 +949,15 @@ export default function BuildPage() {
                       : `${motionHoldPercent}% cuối scene đứng yên; scene 10 giây tương đương ${(10 * motionHoldPercent / 100).toFixed(1)} giây.`}
                   </Typography.Text>
                 </div>
-              </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-6 text-center">
+                  <Typography.Text strong>Chế độ ảnh tĩnh đang bật</Typography.Text>
+                  <Typography.Text className="mt-1 block" type="secondary">
+                    Các thiết lập chuyển động vẫn được giữ lại và sẽ khôi phục khi bạn bật lại.
+                  </Typography.Text>
+                </div>
+              )}
             </div>
             <div className="mt-6 border-t border-slate-200 pt-5">
               <FileSelector
@@ -1002,6 +1027,7 @@ export default function BuildPage() {
         loading={previewLoading}
         items={alignment}
         warnings={alignmentWarnings}
+        motionEnabled={motionEnabled}
         motionEffect={motionEffect}
         motionSequence={motionSequence}
         motionZoomPercent={motionZoomPercent}

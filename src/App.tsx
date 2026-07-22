@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { App as AntApp, ConfigProvider } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import AppShell, { type AppMenuKey } from './layouts/AppShell'
@@ -7,6 +7,7 @@ import BuildPage from './pages/BuildPage'
 import ProjectPage from './pages/ProjectPage'
 import VideoShufflePage from './pages/VideoShufflePage'
 import { useProjectStore } from './stores/useProjectStore'
+import { useAudioMergeStore } from './stores/useAudioMergeStore'
 import type { AppToolKey } from './layouts/AppShell'
 
 function projectMenuKey(projectId: string, tool: AppToolKey): AppMenuKey {
@@ -17,6 +18,39 @@ function parseProjectMenuKey(key: AppMenuKey): { projectId: string; tool: AppToo
   const match = key.match(/^project:(.+):(video-builder|audio-merge|video-shuffle)$/)
   if (!match) return null
   return { projectId: match[1], tool: match[2] as AppToolKey }
+}
+
+function AudioMergeRuntimeBridge() {
+  const { notification } = AntApp.useApp()
+  const applyProgress = useAudioMergeStore((state) => state.applyProgress)
+  const notifiedEvents = useRef(new Set<string>())
+
+  useEffect(
+    () =>
+      window.videoBuilder.onAudioMergeProgress((progress) => {
+        applyProgress(progress)
+        if (progress.phase !== 'complete' && progress.phase !== 'error') return
+        const eventKey = `${progress.jobId}:${progress.phase}`
+        if (notifiedEvents.current.has(eventKey)) return
+        notifiedEvents.current.add(eventKey)
+        if (progress.phase === 'complete') {
+          notification.success({
+            message: 'Ghép audio hoàn tất',
+            description: progress.message,
+            duration: 6,
+          })
+        } else {
+          notification.error({
+            message: 'Ghép audio thất bại',
+            description: progress.error || progress.message,
+            duration: 8,
+          })
+        }
+      }),
+    [applyProgress, notification],
+  )
+
+  return null
 }
 
 export default function App() {
@@ -75,6 +109,7 @@ export default function App() {
       }}
     >
       <AntApp>
+        <AudioMergeRuntimeBridge />
         <AppShell
           activeKey={activeMenu}
           onNavigate={handleNavigate}

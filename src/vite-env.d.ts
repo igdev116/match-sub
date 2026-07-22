@@ -4,6 +4,7 @@ import type {
   AudioFileItem,
   AlignmentPreviewResult,
   AudioMergeConfig,
+  AudioMergeProgress,
   BuildConfig,
   BuildProgress,
   FFmpegStatus,
@@ -92,6 +93,7 @@ declare global {
       installWhisper: () => Promise<void>
       downloadWhisperModel: () => Promise<void>
       onWhisperProgress: (listener: (progress: WhisperProgress) => void) => () => void
+      onAudioMergeProgress: (listener: (progress: AudioMergeProgress) => void) => () => void
       onBuildProgress: (listener: (progress: BuildProgress) => void) => () => void
     }
   }

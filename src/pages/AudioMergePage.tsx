@@ -41,14 +41,14 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons'
 import type { AudioFileItem, WhisperProgress, WhisperStatus } from '../../electron/types'
+import {
+  isAudioMergeRunning,
+  useAudioMergeStore,
+  type AudioMergeItem,
+} from '../stores/useAudioMergeStore'
 import { useProjectStore } from '../stores/useProjectStore'
 
-interface AudioItem {
-  id: string
-  path: string
-  name: string
-  durationSeconds: number | null
-}
+const emptyItems: AudioMergeItem[] = []
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return 'Không rõ thời lượng'
@@ -85,7 +85,7 @@ function SortableAudioItem({
   disabled,
   onRemove,
 }: {
-  item: AudioItem
+  item: AudioMergeItem
   index: number
   disabled: boolean
   onRemove: () => void
@@ -141,17 +141,29 @@ function SortableAudioItem({
 
 export default function AudioMergePage() {
   const { message } = App.useApp()
-  const [items, setItems] = useState<AudioItem[]>([])
-  const [currentPage, setCurrentPage] = useState(1)
-  const [audioDirectory, setAudioDirectory] = useState('')
   const [outputPath, setOutputPath] = useState('')
   const [srtOutputPath, setSrtOutputPath] = useState('')
-  const [processing, setProcessing] = useState(false)
   const [directoryLoading, setDirectoryLoading] = useState(false)
   const durationRequestedPaths = useRef(new Set<string>())
   const activeProject = useProjectStore((state) => state.activeProject)
-  const updateAudioSettings = useProjectStore((state) => state.updateAudioSettings)
+  const projectId = activeProject?.id ?? ''
   const audioSettings = activeProject?.audioSettings
+  const updateAudioSettings = useProjectStore((state) => state.updateAudioSettings)
+  const draft = useAudioMergeStore((state) => state.drafts[projectId])
+  const job = useAudioMergeStore((state) => state.jobs[projectId])
+  const mediaBusy = useAudioMergeStore((state) =>
+    Object.values(state.jobs).some(isAudioMergeRunning),
+  )
+  const ensureDraft = useAudioMergeStore((state) => state.ensureDraft)
+  const updateItems = useAudioMergeStore((state) => state.setItems)
+  const updateCurrentPage = useAudioMergeStore((state) => state.setCurrentPage)
+  const updateAudioDirectory = useAudioMergeStore((state) => state.setAudioDirectory)
+  const startMerge = useAudioMergeStore((state) => state.startMerge)
+  const dismissJob = useAudioMergeStore((state) => state.dismissJob)
+  const items = draft?.items ?? emptyItems
+  const currentPage = draft?.currentPage ?? 1
+  const audioDirectory = draft?.audioDirectory ?? audioSettings?.audioDirectory ?? ''
+  const processing = isAudioMergeRunning(job)
   const audioOutputDirectory = audioSettings?.audioOutputDirectory ?? ''
   const pageSize = audioSettings?.pageSize ?? 10
   const pauseSeconds = audioSettings?.pauseSeconds ?? 1
@@ -159,7 +171,7 @@ export default function AudioMergePage() {
   const language = audioSettings?.language ?? 'auto'
   const whisperThreads = audioSettings?.whisperThreads ?? 4
   const [whisperStatus, setWhisperStatus] = useState<WhisperStatus | null>(null)
-  const [whisperProgress, setWhisperProgress] = useState<WhisperProgress | null>(null)
+  const [whisperSetupProgress, setWhisperSetupProgress] = useState<WhisperProgress | null>(null)
   const [whisperSetupBusy, setWhisperSetupBusy] = useState(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
@@ -167,7 +179,7 @@ export default function AudioMergePage() {
     const timer = window.setTimeout(() => {
       void refreshWhisperStatus()
     }, 300)
-    const unsubscribe = window.videoBuilder.onWhisperProgress(setWhisperProgress)
+    const unsubscribe = window.videoBuilder.onWhisperProgress(setWhisperSetupProgress)
     return () => {
       window.clearTimeout(timer)
       unsubscribe()
@@ -176,15 +188,27 @@ export default function AudioMergePage() {
 
   useEffect(() => {
     if (!audioSettings) return
-    setAudioDirectory(audioSettings.audioDirectory)
+    ensureDraft(projectId, audioSettings.audioDirectory)
     const nextOutputPath =
       audioSettings.outputPath || audioOutputPath(audioSettings.audioOutputDirectory)
     setOutputPath(nextOutputPath)
     setSrtOutputPath(audioSettings.srtOutputPath || srtOutputPathFromAudio(nextOutputPath))
-    setItems([])
-    setCurrentPage(1)
     durationRequestedPaths.current.clear()
-  }, [activeProject?.id])
+  }, [ensureDraft, projectId])
+
+  function setItems(
+    updater: AudioMergeItem[] | ((items: AudioMergeItem[]) => AudioMergeItem[]),
+  ) {
+    if (projectId) updateItems(projectId, updater)
+  }
+
+  function setCurrentPage(page: number) {
+    if (projectId) updateCurrentPage(projectId, page)
+  }
+
+  function setAudioDirectory(directory: string) {
+    if (projectId) updateAudioDirectory(projectId, directory)
+  }
 
   function saveAudioSettings(patch: Parameters<typeof updateAudioSettings>[0]) {
     void updateAudioSettings(patch)
@@ -263,7 +287,7 @@ export default function AudioMergePage() {
 
   async function setupWhisper(action: 'install' | 'download') {
     setWhisperSetupBusy(true)
-    setWhisperProgress(null)
+    setWhisperSetupProgress(null)
     try {
       if (action === 'install') await window.videoBuilder.installWhisper()
       else await window.videoBuilder.downloadWhisperModel()
@@ -307,7 +331,7 @@ export default function AudioMergePage() {
     })
   }
 
-  function createAudioItems(items: AudioFileItem[]): AudioItem[] {
+  function createAudioItems(items: AudioFileItem[]): AudioMergeItem[] {
     return items.map((item) => ({
       id: item.path,
       path: item.path,
@@ -396,9 +420,8 @@ export default function AudioMergePage() {
       return
     }
 
-    setProcessing(true)
     try {
-      await window.videoBuilder.mergeAudio({
+      await startMerge(projectId, {
         files: items.map((item) => item.path),
         pauseSeconds,
         outputPath,
@@ -407,16 +430,8 @@ export default function AudioMergePage() {
         language,
         whisperThreads,
       })
-      message.success(
-        createSrt
-          ? `Đã ghép audio: ${outputPath} và xuất SRT: ${srtOutputPath}`
-          : `Đã ghép audio: ${outputPath}`,
-        6,
-      )
     } catch (error) {
       message.error(cleanError(error), 8)
-    } finally {
-      setProcessing(false)
     }
   }
 
@@ -666,13 +681,13 @@ export default function AudioMergePage() {
               />
             )}
 
-            {whisperProgress && (
+            {whisperSetupProgress && (
               <div>
-                <Typography.Text>{whisperProgress.message}</Typography.Text>
+                <Typography.Text>{whisperSetupProgress.message}</Typography.Text>
                 <Progress
                   className="!mb-0 mt-2"
-                  percent={whisperProgress.percent}
-                  status={whisperProgress.phase === 'error' ? 'exception' : 'active'}
+                  percent={whisperSetupProgress.percent}
+                  status={whisperSetupProgress.phase === 'error' ? 'exception' : 'active'}
                 />
               </div>
             )}
@@ -741,6 +756,35 @@ export default function AudioMergePage() {
 
       <div className="flex justify-center">
         <div className="flex w-full max-w-xl flex-col items-center gap-3">
+          {job && (
+            <Alert
+              className="w-full"
+              type={job.phase === 'error' ? 'error' : job.phase === 'complete' ? 'success' : 'info'}
+              showIcon
+              message={job.message}
+              description={
+                <div>
+                  {job.error && <Typography.Text type="danger">{job.error}</Typography.Text>}
+                  <Progress
+                    className="!mb-0 mt-2"
+                    percent={job.percent}
+                    status={
+                      job.phase === 'error'
+                        ? 'exception'
+                        : job.phase === 'complete'
+                          ? 'success'
+                          : 'active'
+                    }
+                  />
+                  {!processing && (
+                    <Button className="mt-2" size="small" onClick={() => dismissJob(projectId)}>
+                      Đóng trạng thái
+                    </Button>
+                  )}
+                </div>
+              }
+            />
+          )}
           {missingRequirements.length > 0 && (
             <Alert
               className="w-full"
@@ -755,7 +799,7 @@ export default function AudioMergePage() {
             size="large"
             icon={<AudioOutlined />}
             loading={processing}
-            disabled={missingRequirements.length > 0 || whisperSetupBusy}
+            disabled={missingRequirements.length > 0 || whisperSetupBusy || mediaBusy}
             onClick={merge}
           >
             {createSrt ? 'Ghép audio và xuất SRT' : 'Ghép audio'}

@@ -8,6 +8,7 @@ interface AlignmentPreviewProps {
   loading: boolean
   items: AlignmentItem[]
   warnings: string[]
+  motionEnabled: boolean
   motionEffect: BuildConfig['motionEffect']
   motionSequence: MotionSequenceItem[]
   motionZoomPercent: number
@@ -64,6 +65,7 @@ export default function AlignmentPreview({
   loading,
   items,
   warnings,
+  motionEnabled,
   motionEffect,
   motionSequence,
   motionZoomPercent,
@@ -97,6 +99,7 @@ export default function AlignmentPreview({
     effect: BuildConfig['motionEffect']
     sequenceIndex: number
   } {
+    if (!motionEnabled) return { effect: 'none', sequenceIndex: 0 }
     const sequenceIndex = index % effectiveMotionSequence.length
     const configuredEffect = effectiveMotionSequence[sequenceIndex].effect
     return {
@@ -157,7 +160,7 @@ export default function AlignmentPreview({
         if (effect === 'none') {
           return (
             <div className="space-y-2">
-              <Tag color="gold">Motion #{sequenceIndex + 1}</Tag>
+              {motionEnabled && <Tag color="gold">Motion #{sequenceIndex + 1}</Tag>}
               <Tag>Đứng yên toàn bộ scene</Tag>
               <Typography.Text type="secondary" className="block text-xs">
                 {item.duration.toFixed(2)} giây, không zoom
@@ -218,34 +221,44 @@ export default function AlignmentPreview({
           bordered
           column={{ xs: 1, sm: 2, md: 4 }}
           items={[
-            {
-              key: 'effect',
-              label: 'Sequence',
-              children: `${effectiveMotionSequence.length} chuyển động`,
-            },
-            {
-              key: 'formula',
-              label: 'Công thức lặp',
-              children: `scene index % ${effectiveMotionSequence.length}`,
-            },
-            {
-              key: 'zoom',
-              label: 'Zoom vào',
-              children: `${motionZoomPercent}%`,
-            },
-            {
-              key: 'zoomOut',
-              label: 'Zoom từ trong ra',
-              children: `${motionZoomOutStartPercent}%`,
-            },
-            {
-              key: 'hold',
-              label: 'Giữ cuối',
-              children:
-                motionHoldMode === 'seconds'
-                  ? `${motionHoldSeconds}s cố định mỗi scene`
-                  : `${motionHoldPercent}% mỗi scene`,
-            },
+            ...(motionEnabled
+              ? [
+                  {
+                    key: 'effect',
+                    label: 'Sequence',
+                    children: `${effectiveMotionSequence.length} chuyển động`,
+                  },
+                  {
+                    key: 'formula',
+                    label: 'Công thức lặp',
+                    children: `scene index % ${effectiveMotionSequence.length}`,
+                  },
+                  {
+                    key: 'zoom',
+                    label: 'Zoom vào',
+                    children: `${motionZoomPercent}%`,
+                  },
+                  {
+                    key: 'zoomOut',
+                    label: 'Zoom từ trong ra',
+                    children: `${motionZoomOutStartPercent}%`,
+                  },
+                  {
+                    key: 'hold',
+                    label: 'Giữ cuối',
+                    children:
+                      motionHoldMode === 'seconds'
+                        ? `${motionHoldSeconds}s cố định mỗi scene`
+                        : `${motionHoldPercent}% mỗi scene`,
+                  },
+                ]
+              : [
+                  {
+                    key: 'disabled',
+                    label: 'Chuyển động',
+                    children: 'Đã tắt — ảnh đứng yên toàn bộ scene',
+                  },
+                ]),
           ]}
         />
         {warnings.length > 0 && (

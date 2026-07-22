@@ -16,6 +16,7 @@ import {
 import { parseSrt } from './srt-parser'
 import type {
   AudioMergeConfig,
+  AudioMergeProgress,
   AudioFileItem,
   BuildConfig,
   ImagePreviewItem,
@@ -44,6 +45,7 @@ import {
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
 let building = false
+let mergingAudio = false
 interface AppPreferences {
   lastSourceFolder: string
   lastAudioDirectory: string
@@ -288,6 +290,7 @@ function defaultVideoSettings(
     ffmpegThreads: 1,
     scenePauseMs: 250,
     resolution: '1920x1080',
+    motionEnabled: true,
     motionEffect: 'zoom-right',
     motionSequence: [{ id: 'motion-1', effect: 'zoom-right' }],
     motionZoomPercent: 8,
@@ -400,6 +403,7 @@ function getProjectState(): ProjectState {
       project.videoShuffleSettings &&
       Number.isFinite(project.videoShuffleSettings.shortVideoThresholdSeconds) &&
       Number.isFinite(project.videoSettings.motionZoomOutStartPercent) &&
+      typeof project.videoSettings.motionEnabled === 'boolean' &&
       Array.isArray(project.videoSettings.motionSequence) &&
       project.videoSettings.motionSequence.length > 0
     ) {
@@ -421,6 +425,7 @@ function getProjectState(): ProjectState {
       },
       videoSettings: {
         ...project.videoSettings,
+        motionEnabled: project.videoSettings.motionEnabled ?? true,
         motionZoomOutStartPercent: project.videoSettings.motionZoomOutStartPercent ?? 12,
         motionSequence:
           Array.isArray(project.videoSettings.motionSequence) &&
@@ -1142,7 +1147,7 @@ app.whenReady().then(() => {
   ipcMain.handle('preview:alignment', (_event, config: PreviewConfig) => previewAlignment(config))
   ipcMain.handle('build:stop', () => stopBuild())
   ipcMain.handle('build:sample', async (_event, config: SampleBuildConfig) => {
-    if (building) throw new Error('Một tiến trình build khác đang chạy.')
+    if (building || mergingAudio) throw new Error('Một tiến trình media khác đang chạy.')
     building = true
     try {
       return await buildSampleVideo(config)
@@ -1158,15 +1163,60 @@ app.whenReady().then(() => {
     downloadBaseModel((progress) => mainWindow?.webContents.send('whisper:progress', progress)),
   )
   ipcMain.handle('audio:merge', async (_event, config: AudioMergeConfig) => {
-    await mergeAudio(config)
-    if (config.createSrt) {
-      await transcribeToSrt(config, (progress) =>
-        mainWindow?.webContents.send('whisper:progress', progress),
-      )
+    if (mergingAudio || building) throw new Error('Một tiến trình media khác đang chạy.')
+    mergingAudio = true
+    const sendProgress = (progress: Omit<AudioMergeProgress, 'jobId' | 'projectId'>) => {
+      mainWindow?.webContents.send('audio:progress', {
+        jobId: config.jobId,
+        projectId: config.projectId,
+        ...progress,
+      } satisfies AudioMergeProgress)
+    }
+    try {
+      sendProgress({
+        phase: 'merging',
+        percent: 3,
+        message: 'Đang ghép các file audio...',
+        outputPath: config.outputPath,
+        srtOutputPath: config.createSrt ? config.srtOutputPath : undefined,
+      })
+      await mergeAudio(config)
+      if (config.createSrt) {
+        await transcribeToSrt(config, (progress) => {
+          if (progress.percent >= 100) return
+          sendProgress({
+            phase: progress.percent < 15 ? 'normalizing' : 'transcribing',
+            percent: progress.percent,
+            message: progress.message,
+            outputPath: config.outputPath,
+            srtOutputPath: config.srtOutputPath,
+          })
+        })
+      }
+      sendProgress({
+        phase: 'complete',
+        percent: 100,
+        message: config.createSrt ? 'Đã ghép audio và xuất SRT.' : 'Đã ghép audio.',
+        outputPath: config.outputPath,
+        srtOutputPath: config.createSrt ? config.srtOutputPath : undefined,
+      })
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      sendProgress({
+        phase: 'error',
+        percent: 0,
+        message: 'Ghép audio thất bại.',
+        outputPath: config.outputPath,
+        srtOutputPath: config.createSrt ? config.srtOutputPath : undefined,
+        error: errorMessage,
+      })
+      throw error
+    } finally {
+      mergingAudio = false
     }
   })
   ipcMain.handle('build:start', async (_event, config: BuildConfig) => {
-    if (building) throw new Error('Một tiến trình build khác đang chạy.')
+    if (building || mergingAudio) throw new Error('Một tiến trình media khác đang chạy.')
     building = true
     try {
       const alignment = createAlignment(config)

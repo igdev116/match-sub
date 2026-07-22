@@ -29,7 +29,11 @@ function userModelPath(): string {
   return path.join(app.getPath('userData'), 'models', 'ggml-base.bin')
 }
 
-function runCapture(command: string, args: string[]): Promise<string> {
+function runCapture(
+  command: string,
+  args: string[],
+  onOutput?: (chunk: string) => void,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const bundledDirectory = bundledWhisperDirectory()
     const usesBundledExecutable = path.isAbsolute(command) && path.dirname(command) === bundledDirectory
@@ -44,11 +48,16 @@ function runCapture(command: string, args: string[]): Promise<string> {
         : process.env,
     })
     let output = ''
+    const appendOutput = (chunk: Buffer) => {
+      const text = chunk.toString()
+      onOutput?.(text)
+      output = `${output}${text}`.slice(-20_000)
+    }
     child.stdout.on('data', (chunk: Buffer) => {
-      output += chunk.toString()
+      appendOutput(chunk)
     })
     child.stderr.on('data', (chunk: Buffer) => {
-      output += chunk.toString()
+      appendOutput(chunk)
     })
     child.on('error', reject)
     child.on('close', (code) => {
@@ -190,7 +199,7 @@ export async function transcribeToSrt(
 
   try {
     fs.mkdirSync(path.dirname(srtPath), { recursive: true })
-    onProgress({ phase: 'transcribing', percent: 5, message: 'Đang chuẩn hóa audio...' })
+    onProgress({ phase: 'transcribing', percent: 10, message: 'Đang chuẩn hóa audio...' })
     await convertAudioForWhisper(config.outputPath, wavPath)
     onProgress({ phase: 'transcribing', percent: 15, message: 'Whisper đang nhận dạng lời thoại...' })
 
@@ -206,9 +215,22 @@ export async function transcribeToSrt(
       '-osrt',
       '-of',
       outputBase,
-      '-np',
+      '-pp',
     ]
-    await runCapture(status.executablePath, args)
+    let lastWhisperPercent = -1
+    let progressBuffer = ''
+    await runCapture(status.executablePath, args, (chunk) => {
+      progressBuffer = `${progressBuffer}${chunk}`.slice(-512)
+      const matches = [...progressBuffer.matchAll(/progress\s*=\s*(\d+)%/g)]
+      const rawPercent = Number(matches.at(-1)?.[1] ?? -1)
+      if (rawPercent <= lastWhisperPercent || rawPercent < 0) return
+      lastWhisperPercent = rawPercent
+      onProgress({
+        phase: 'transcribing',
+        percent: Math.min(99, 15 + Math.round(rawPercent * 0.84)),
+        message: `Whisper đang nhận dạng lời thoại... ${rawPercent}%`,
+      })
+    })
     if (!fs.existsSync(srtPath)) throw new Error('Whisper không tạo được file SRT.')
     onProgress({ phase: 'complete', percent: 100, message: `Đã xuất SRT: ${srtPath}` })
     return srtPath
