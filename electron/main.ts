@@ -69,6 +69,12 @@ const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp'])
 const thumbnailCache = new Map<string, string>()
 const pendingThumbnails = new Map<string, Promise<string>>()
 const thumbnailCacheLimit = 300
+const thumbnailConcurrency = 3
+let activeThumbnailTasks = 0
+const thumbnailQueue: Array<{
+  filePath: string
+  resolve: (thumbnail: string) => void
+}> = []
 const audioExtensions = new Set([
   '.mp3',
   '.wav',
@@ -750,6 +756,28 @@ async function createThumbnail(filePath: string): Promise<string> {
   }
 }
 
+function drainThumbnailQueue(): void {
+  while (activeThumbnailTasks < thumbnailConcurrency && thumbnailQueue.length > 0) {
+    const task = thumbnailQueue.shift()
+    if (!task) return
+    activeThumbnailTasks += 1
+    void createThumbnail(task.filePath)
+      .then((thumbnail) => {
+        if (thumbnailCache.size >= thumbnailCacheLimit) {
+          const oldestKey = thumbnailCache.keys().next().value
+          if (oldestKey) thumbnailCache.delete(oldestKey)
+        }
+        thumbnailCache.set(task.filePath, thumbnail)
+        task.resolve(thumbnail)
+      })
+      .finally(() => {
+        pendingThumbnails.delete(task.filePath)
+        activeThumbnailTasks -= 1
+        drainThumbnailQueue()
+      })
+  }
+}
+
 async function getThumbnail(filePath: string): Promise<string> {
   const cached = thumbnailCache.get(filePath)
   if (cached !== undefined) return cached
@@ -760,16 +788,11 @@ async function getThumbnail(filePath: string): Promise<string> {
   const pending = pendingThumbnails.get(filePath)
   if (pending) return pending
 
-  const promise = createThumbnail(filePath).then((thumbnail) => {
-    if (thumbnailCache.size >= thumbnailCacheLimit) {
-      const oldestKey = thumbnailCache.keys().next().value
-      if (oldestKey) thumbnailCache.delete(oldestKey)
-    }
-    thumbnailCache.set(filePath, thumbnail)
-    pendingThumbnails.delete(filePath)
-    return thumbnail
+  const promise = new Promise<string>((resolve) => {
+    thumbnailQueue.push({ filePath, resolve })
   })
   pendingThumbnails.set(filePath, promise)
+  drainThumbnailQueue()
   return promise
 }
 

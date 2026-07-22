@@ -2,6 +2,36 @@ import { useEffect, useState } from 'react'
 import { Image, Skeleton, Typography } from 'antd'
 
 const thumbnailCache = new Map<string, string>()
+const pendingThumbnailRequests = new Map<string, Promise<string>>()
+const thumbnailCacheLimit = 200
+
+function cachedThumbnail(path: string): string | undefined {
+  const cached = thumbnailCache.get(path)
+  if (cached === undefined) return undefined
+  thumbnailCache.delete(path)
+  thumbnailCache.set(path, cached)
+  return cached
+}
+
+function requestThumbnail(path: string): Promise<string> {
+  const pending = pendingThumbnailRequests.get(path)
+  if (pending) return pending
+
+  const request = window.videoBuilder
+    .getThumbnail(path)
+    .catch(() => '')
+    .then((thumbnail) => {
+      if (thumbnailCache.size >= thumbnailCacheLimit) {
+        const oldestKey = thumbnailCache.keys().next().value
+        if (oldestKey) thumbnailCache.delete(oldestKey)
+      }
+      thumbnailCache.set(path, thumbnail)
+      return thumbnail
+    })
+    .finally(() => pendingThumbnailRequests.delete(path))
+  pendingThumbnailRequests.set(path, request)
+  return request
+}
 
 interface ThumbnailImageProps {
   path: string
@@ -16,11 +46,11 @@ export default function ThumbnailImage({
   className = '!h-32 !w-full object-cover',
   preview = true,
 }: ThumbnailImageProps) {
-  const [thumbnail, setThumbnail] = useState(() => thumbnailCache.get(path) ?? '')
+  const [thumbnail, setThumbnail] = useState(() => cachedThumbnail(path) ?? '')
   const [loaded, setLoaded] = useState(() => thumbnailCache.has(path))
 
   useEffect(() => {
-    const cached = thumbnailCache.get(path)
+    const cached = cachedThumbnail(path)
     if (cached !== undefined) {
       setThumbnail(cached)
       setLoaded(true)
@@ -30,8 +60,7 @@ export default function ThumbnailImage({
     setThumbnail('')
     setLoaded(false)
     let active = true
-    void window.videoBuilder.getThumbnail(path).then((dataUrl) => {
-      thumbnailCache.set(path, dataUrl)
+    void requestThumbnail(path).then((dataUrl) => {
       if (active) {
         setThumbnail(dataUrl)
         setLoaded(true)
@@ -51,11 +80,13 @@ export default function ThumbnailImage({
     )
   }
   return (
-    <Image
-      src={thumbnail}
-      alt={alt}
-      className={className}
-      preview={preview ? { src: thumbnail } : false}
-    />
+    <div className={className}>
+      <Image
+        src={thumbnail}
+        alt={alt}
+        className="w-full h-full object-cover rounded"
+        preview={preview ? { src: thumbnail } : false}
+      />
+    </div>
   )
 }

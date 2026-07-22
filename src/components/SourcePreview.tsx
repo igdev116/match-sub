@@ -35,10 +35,7 @@ function ImageCell({
         <ThumbnailImage path={item.path} alt={item.name} />
         <div className="space-y-1 p-3">
           {item.sceneNumber !== null && <Tag color="purple">Scene {item.sceneNumber}</Tag>}
-          <Typography.Paragraph
-            className="!mb-0 text-xs"
-            ellipsis={{ rows: 2, tooltip: item.name }}
-          >
+          <Typography.Paragraph className="image-preview-name !mb-0 text-xs">
             {item.name}
           </Typography.Paragraph>
         </div>
@@ -72,7 +69,7 @@ export default function SourcePreview({ data, loading, onClose }: SourcePreviewP
             columnCount={columnCount}
             columnWidth="25%"
             rowCount={Math.ceil(data.items.length / columnCount)}
-            rowHeight={214}
+            rowHeight={252}
             overscanCount={1}
             style={{ height: '68vh', width: '100%' }}
           />

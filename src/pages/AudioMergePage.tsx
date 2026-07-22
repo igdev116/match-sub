@@ -29,18 +29,28 @@ import {
   Space,
   Switch,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import {
   AudioOutlined,
+  ClockCircleOutlined,
+  CloudDownloadOutlined,
   DeleteOutlined,
+  FileTextOutlined,
   FolderOpenOutlined,
   FolderViewOutlined,
   HolderOutlined,
+  InfoCircleOutlined,
   PlusOutlined,
+  QuestionCircleOutlined,
   ReloadOutlined,
+  SettingOutlined,
+  SoundOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import type { AudioFileItem, WhisperProgress, WhisperStatus } from '../../electron/types'
+import ActionBar from '../components/ActionBar'
 import {
   isAudioMergeRunning,
   useAudioMergeStore,
@@ -102,37 +112,45 @@ function SortableAudioItem({
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.55 : 1,
-        background: isDragging ? '#f5f3ff' : undefined,
+        background: isDragging ? '#fff5f4' : undefined,
       }}
+      className="!py-2.5 !px-3.5 hover:bg-slate-50/80 transition-colors"
       actions={[
         <Button
           key="remove"
           type="text"
           danger
+          size="small"
           icon={<DeleteOutlined />}
           disabled={disabled}
           onClick={onRemove}
+          title="Xóa tệp này"
         />,
       ]}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Button
           type="text"
-          icon={<HolderOutlined />}
-          className="cursor-grab"
+          size="small"
+          icon={<HolderOutlined className="text-slate-400" />}
+          className="cursor-grab shrink-0"
           disabled={disabled}
           {...attributes}
           {...listeners}
         />
-        <Tag className="shrink-0">{index + 1}</Tag>
-        <AudioOutlined className="shrink-0 text-lg text-violet-600" />
+        <Tag color="volcano" className="shrink-0 font-mono text-xs font-semibold !mr-0 px-2 py-0.5">
+          #{index + 1}
+        </Tag>
+        <SoundOutlined className="shrink-0 text-brand-500 text-base" />
         <div className="min-w-0 flex-1">
-          <Typography.Text className="block" ellipsis={{ tooltip: item.name }}>
+          <Typography.Text strong className="block text-xs text-slate-800" ellipsis={{ tooltip: item.name }}>
             {item.name}
           </Typography.Text>
-          <Typography.Text type="secondary" className="block text-xs">
-            {formatDuration(item.durationSeconds)}
-          </Typography.Text>
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <span className="flex items-center gap-1 font-mono">
+              <ClockCircleOutlined className="text-slate-400" /> {formatDuration(item.durationSeconds)}
+            </span>
+          </div>
         </div>
       </div>
     </List.Item>
@@ -436,32 +454,29 @@ export default function AudioMergePage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl space-y-5 pb-10">
-      <header className="page-hero">
-        <Typography.Title className="!mb-1 !text-white" level={2}>
-          <AudioOutlined /> Ghép audio
-        </Typography.Title>
-        <Typography.Text className="!text-white/70">
-          Ghép nhiều audio thành một file và tự chèn khoảng nghỉ giữa các đoạn
-        </Typography.Text>
-      </header>
-
+    <main className="mx-auto max-w-5xl space-y-5 pb-28">
+      {/* Card 1: Danh sách Audio */}
       <Card
-        title={`Danh sách audio (${items.length})`}
+        className="!rounded-lg border border-slate-200/80 shadow-sm"
+        title={
+          <div className="flex items-center gap-2">
+            <SoundOutlined className="text-brand-500 text-base" />
+            <span className="font-semibold text-slate-800">Danh sách tệp audio ghép ({items.length})</span>
+            <Tooltip title="Nạp các tệp MP3/WAV. Bạn có thể kéo thả biểu tượng ⠿ để sắp xếp thứ tự phát nối.">
+              <QuestionCircleOutlined className="text-slate-400 cursor-help text-xs hover:text-brand-500" />
+            </Tooltip>
+          </div>
+        }
         extra={
           <Space>
-            {audioDirectory && (
-              <Button
-                icon={<ReloadOutlined />}
-                loading={directoryLoading}
-                disabled={processing}
-                onClick={() => void refreshAudioDirectory()}
-              >
-                Tải danh sách
-              </Button>
-            )}
             {items.length > 0 && (
-              <Button disabled={processing} onClick={() => setItems([])}>
+              <Button
+                disabled={processing}
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => setItems([])}
+                className="!rounded-md"
+              >
                 Xóa tất cả
               </Button>
             )}
@@ -469,117 +484,133 @@ export default function AudioMergePage() {
               icon={<PlusOutlined />}
               disabled={processing}
               onClick={addFiles}
+              className="!rounded-md"
             >
-              Thêm audio
+              Thêm tệp lẻ
             </Button>
             <Button
               type="primary"
               icon={<FolderOpenOutlined />}
               disabled={processing}
               onClick={() => void selectAudioDirectory()}
+              className="!rounded-md"
             >
-              Chọn thư mục
+              Chọn thư mục audio
             </Button>
           </Space>
         }
       >
         {audioDirectory && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-3">
-            <div className="min-w-0">
-              <Typography.Text type="secondary">Thư mục đang theo dõi:</Typography.Text>{' '}
-              <Typography.Text copyable ellipsis={{ tooltip: audioDirectory }}>
+          <div className="mb-3.5 flex items-center justify-between gap-3 rounded-md bg-slate-50 border border-slate-200/80 px-3.5 py-2 text-xs">
+            <div className="min-w-0 flex-1 flex items-center gap-2">
+              <span className="text-slate-500 font-medium shrink-0">Thư mục theo dõi:</span>
+              <Typography.Text copyable ellipsis={{ tooltip: audioDirectory }} className="font-mono text-slate-700">
                 {audioDirectory}
               </Typography.Text>
-              {items.length === 0 && (
-                <Typography.Text className="mt-1 block text-xs" type="secondary">
-                  App không tự đọc folder khi mở trang để tránh lag. Bấm tải danh sách khi cần.
-                </Typography.Text>
-              )}
             </div>
             <Button
+              size="small"
               icon={<ReloadOutlined />}
               loading={directoryLoading}
               disabled={processing}
               onClick={() => void refreshAudioDirectory()}
+              className="!rounded-md shrink-0"
             >
-              Tải danh sách
+              Nạp lại tệp
             </Button>
           </div>
         )}
+
         {items.length === 0 ? (
-          <Empty description="Chưa có audio" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-            <Space>
-              {audioDirectory && (
-                <Button
-                  icon={<ReloadOutlined />}
-                  loading={directoryLoading}
-                  disabled={processing}
-                  onClick={() => void refreshAudioDirectory()}
-                >
-                  Tải danh sách từ thư mục đã nhớ
-                </Button>
-              )}
-              <Button icon={<PlusOutlined />} onClick={addFiles}>
-                Chọn nhiều file
+          <div className="py-8 text-center bg-slate-50/50 rounded-md border border-dashed border-slate-200 space-y-3">
+            <SoundOutlined className="text-3xl text-slate-300" />
+            <div>
+              <Typography.Text strong className="block text-slate-700 text-sm">
+                Chưa có tệp audio nào trong danh sách
+              </Typography.Text>
+              <Typography.Text className="text-slate-500 text-xs">
+                Vui lòng chọn 1 Thư mục audio hoặc Thêm tệp MP3/WAV lẻ để bắt đầu ghép.
+              </Typography.Text>
+            </div>
+            <div className="flex justify-center gap-2.5 pt-1">
+              <Button icon={<PlusOutlined />} onClick={addFiles} className="!rounded-md">
+                Thêm tệp lẻ
               </Button>
               <Button
                 type="primary"
                 icon={<FolderOpenOutlined />}
                 onClick={() => void selectAudioDirectory()}
+                className="!rounded-md"
               >
-                Chọn thư mục
+                Chọn thư mục audio
               </Button>
-            </Space>
-          </Empty>
+            </div>
+          </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext
-              items={pagedItems.map((item) => item.id)}
-              strategy={verticalListSortingStrategy}
-            >
+            <SortableContext items={pagedItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
               <List
                 bordered
+                className="!rounded-md overflow-hidden border-slate-200 bg-white"
                 dataSource={pagedItems}
                 renderItem={(item, index) => (
                   <SortableAudioItem
                     item={item}
                     index={pageStart + index}
                     disabled={processing}
-                    onRemove={() =>
-                      setItems((current) => current.filter((entry) => entry.id !== item.id))
-                    }
+                    onRemove={() => setItems((current) => current.filter((entry) => entry.id !== item.id))}
                   />
                 )}
               />
             </SortableContext>
-            <div className="mt-4 flex justify-end">
-              <Pagination
-                current={currentPage}
-                pageSize={pageSize}
-                total={items.length}
-                showSizeChanger
-                pageSizeOptions={[10, 20, 50]}
-                showTotal={(total, range) => `${range[0]}-${range[1]} / ${total} audio`}
-                onChange={(page, size) => {
-                  if (size !== pageSize) {
-                    saveAudioSettings({ pageSize: size })
-                    setCurrentPage(1)
-                  } else {
-                    setCurrentPage(page)
-                  }
-                }}
-              />
-            </div>
+
+            {items.length > pageSize && (
+              <div className="mt-3.5 flex justify-end">
+                <Pagination
+                  current={currentPage}
+                  pageSize={pageSize}
+                  total={items.length}
+                  showSizeChanger
+                  pageSizeOptions={[10, 20, 50]}
+                  showTotal={(total, range) => `${range[0]}-${range[1]} / ${total} audio`}
+                  onChange={(page, size) => {
+                    if (size !== pageSize) {
+                      saveAudioSettings({ pageSize: size })
+                      setCurrentPage(1)
+                    } else {
+                      setCurrentPage(page)
+                    }
+                  }}
+                />
+              </div>
+            )}
           </DndContext>
         )}
       </Card>
 
-      <Card title="Thiết lập output">
-        <div className="grid gap-5 md:grid-cols-[220px_1fr]">
-          <div>
-            <Typography.Text strong>Khoảng nghỉ giữa các audio</Typography.Text>
+      {/* Card 2: Thiết lập Ghép nối & Output MP3 */}
+      <Card
+        className="!rounded-lg border border-slate-200/80 shadow-sm"
+        title={
+          <div className="flex items-center gap-2">
+            <SettingOutlined className="text-brand-500 text-base" />
+            <span className="font-semibold text-slate-800">Cấu hình ghép nối & Output MP3</span>
+          </div>
+        }
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Khoảng nghỉ giữa các audio */}
+          <div className="bg-slate-50/70 p-3.5 rounded-md border border-slate-200/80 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Typography.Text strong className="text-xs text-slate-700">
+                Khoảng nghỉ giữa các tệp audio (Pause Gap)
+              </Typography.Text>
+              <Tooltip title="Tự động chèn khoảng tĩnh không tiếng (tính theo giây) ở điểm nối giữa từng tệp audio.">
+                <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+              </Tooltip>
+            </div>
             <InputNumber
-              className="mt-2 !w-full"
+              className="!w-full"
               min={0}
               max={60}
               step={0.5}
@@ -589,85 +620,115 @@ export default function AudioMergePage() {
               disabled={processing}
               onChange={(value) => saveAudioSettings({ pauseSeconds: value ?? 1 })}
             />
-            <Typography.Text type="secondary" className="mt-2 block text-xs">
-              {pauseCount} khoảng nghỉ, tổng cộng {totalPause.toFixed(1)} giây
+            <Typography.Text className="block text-[11px] text-slate-500">
+              Tạo {pauseCount} điểm nối (tổng chèn thêm <strong className="text-slate-700">+{totalPause.toFixed(1)}s</strong> thời lượng tĩnh).
             </Typography.Text>
           </div>
-          <div>
-            <Typography.Text strong>File MP3 output</Typography.Text>
-            <Space.Compact className="mt-2 w-full">
-              <Input value={outputPath} readOnly />
+
+          {/* File MP3 output */}
+          <div className="bg-slate-50/70 p-3.5 rounded-md border border-slate-200/80 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Typography.Text strong className="text-xs text-slate-700">
+                Đường dẫn File MP3 thành phẩm
+              </Typography.Text>
+              <Tooltip title="Nơi lưu trữ file MP3 đã được nối hoàn chỉnh.">
+                <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+              </Tooltip>
+            </div>
+            <Space.Compact className="w-full">
+              <Input className="font-mono text-xs" value={outputPath} readOnly placeholder="Chưa có đường dẫn output" />
               <Button
                 icon={<FolderViewOutlined />}
                 disabled={!outputPath}
                 onClick={() => void showOutputFolder()}
-                title="Mở thư mục chứa"
+                title="Mở thư mục chứa file"
+                className="!rounded-none"
               >
                 Mở thư mục
               </Button>
               <Button
+                type="primary"
                 icon={<FolderOpenOutlined />}
                 disabled={processing}
                 onClick={() => void chooseOutputPath()}
+                className="!rounded-r-md"
               >
-                Chọn file MP3
+                Chọn vị trí
               </Button>
             </Space.Compact>
-            <Typography.Text type="secondary" className="mt-2 block text-xs">
-              Có thể chọn file MP3 ở folder riêng, ví dụ output/audio/merged-audio.mp3.
+            <Typography.Text className="block text-[11px] text-slate-500">
+              Mặc định xuất file tên: <code className="font-mono text-slate-600">merged-audio.mp3</code>
             </Typography.Text>
           </div>
         </div>
       </Card>
 
+      {/* Card 3: Phụ đề SRT (Whisper AI) */}
       <Card
-        title="Phụ đề SRT"
+        className="!rounded-lg border border-slate-200/80 shadow-sm"
+        title={
+          <div className="flex items-center gap-2">
+            <FileTextOutlined className="text-brand-500 text-base" />
+            <span className="font-semibold text-slate-800">Trích xuất Phụ đề SRT (Whisper AI)</span>
+          </div>
+        }
         extra={
-          <Switch
-            checked={createSrt}
-            disabled={processing || whisperSetupBusy}
-            onChange={(value) => saveAudioSettings({ createSrt: value })}
-          />
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-600">Bật nhận dạng SRT</span>
+            <Switch
+              checked={createSrt}
+              disabled={processing || whisperSetupBusy}
+              onChange={(value) => saveAudioSettings({ createSrt: value })}
+            />
+          </div>
         }
       >
         {!createSrt ? (
-          <Typography.Text type="secondary">
-            Bật để dùng Whisper nhận dạng lời nói và xuất file SRT cạnh audio.
-          </Typography.Text>
+          <div className="p-3 bg-slate-50 rounded-md border border-slate-200 text-xs text-slate-500">
+            Gạt công tắc <strong className="text-slate-700">"Bật nhận dạng SRT"</strong> ở góc trên nếu bạn muốn AI tự động lắng nghe và xuất file phụ đề .srt tương ứng với file MP3 nối.
+          </div>
         ) : (
-          <div className="space-y-5">
-            <div className="flex flex-wrap items-center gap-3">
-              <Tag color={whisperStatus?.available ? 'success' : 'error'}>
+          <div className="space-y-4">
+            {/* Status Badges & Setup */}
+            <div className="flex flex-wrap items-center gap-2.5 bg-slate-50/70 p-3 rounded-md border border-slate-200/80">
+              <Tag color={whisperStatus?.available ? 'success' : 'error'} className="!mr-0 font-medium text-xs">
                 {whisperStatus?.available
                   ? whisperStatus.executableSource === 'bundled'
-                    ? 'Whisper đi kèm app sẵn sàng'
-                    : 'whisper.cpp sẵn sàng'
-                  : 'Thiếu whisper.cpp'}
+                    ? 'Whisper AI (Bundled): Sẵn sàng'
+                    : 'Whisper.cpp: Sẵn sàng'
+                  : 'Chưa cài Whisper.cpp'}
               </Tag>
-              <Tag color={whisperStatus?.modelAvailable ? 'success' : 'warning'}>
+              <Tag color={whisperStatus?.modelAvailable ? 'success' : 'warning'} className="!mr-0 font-medium text-xs">
                 {whisperStatus?.modelAvailable
                   ? whisperStatus.modelSource === 'bundled'
-                    ? 'Model base đi kèm app sẵn sàng'
-                    : 'Model base sẵn sàng'
-                  : 'Thiếu model base'}
+                    ? 'Model Base AI (Bundled): Sẵn sàng'
+                    : 'Model Base: Sẵn sàng'
+                  : 'Chưa nạp Model Base'}
               </Tag>
+
               {!whisperStatus?.available && whisperStatus?.installSupported && (
                 <Button
                   type="primary"
+                  size="small"
+                  icon={<CloudDownloadOutlined />}
                   loading={whisperSetupBusy}
                   disabled={processing}
                   onClick={() => void setupWhisper('install')}
+                  className="!rounded-md"
                 >
                   Cài bằng Homebrew
                 </Button>
               )}
               {!whisperStatus?.modelAvailable && whisperStatus?.downloadSupported && (
                 <Button
+                  size="small"
+                  icon={<CloudDownloadOutlined />}
                   loading={whisperSetupBusy}
                   disabled={processing}
                   onClick={() => void setupWhisper('download')}
+                  className="!rounded-md"
                 >
-                  Tải model base (~148 MB)
+                  Tải Model Base (~148 MB)
                 </Button>
               )}
             </div>
@@ -676,31 +737,43 @@ export default function AudioMergePage() {
               <Alert
                 type="error"
                 showIcon
+                className="!rounded-md"
                 message="Bộ cài không đầy đủ"
                 description={whisperStatus.repairMessage}
               />
             )}
 
             {whisperSetupProgress && (
-              <div>
-                <Typography.Text>{whisperSetupProgress.message}</Typography.Text>
+              <div className="bg-slate-50 p-3 rounded-md border border-slate-200 space-y-1.5">
+                <Typography.Text className="text-xs font-medium text-slate-700">
+                  {whisperSetupProgress.message}
+                </Typography.Text>
                 <Progress
-                  className="!mb-0 mt-2"
+                  className="!mb-0"
                   percent={whisperSetupProgress.percent}
                   status={whisperSetupProgress.phase === 'error' ? 'exception' : 'active'}
                 />
               </div>
             )}
 
-            <div>
-              <Typography.Text strong>File SRT output</Typography.Text>
-              <Space.Compact className="mt-2 w-full">
-                <Input value={srtOutputPath} readOnly />
+            {/* File SRT output Path */}
+            <div className="bg-slate-50/70 p-3.5 rounded-md border border-slate-200/80 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Typography.Text strong className="text-xs text-slate-700">
+                  Đường dẫn File SRT output
+                </Typography.Text>
+                <Tooltip title="Vị trí lưu file phụ đề chuẩn .srt sau khi Whisper AI nhận dạng xong.">
+                  <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+                </Tooltip>
+              </div>
+              <Space.Compact className="w-full">
+                <Input className="font-mono text-xs" value={srtOutputPath} readOnly placeholder="Chưa có đường dẫn file SRT" />
                 <Button
                   icon={<FolderViewOutlined />}
                   disabled={!srtOutputPath}
                   onClick={() => void showSrtOutputFolder()}
-                  title="Mở thư mục chứa SRT"
+                  title="Mở thư mục chứa file SRT"
+                  className="!rounded-none"
                 >
                   Mở thư mục
                 </Button>
@@ -708,20 +781,27 @@ export default function AudioMergePage() {
                   icon={<FolderOpenOutlined />}
                   disabled={processing || whisperSetupBusy}
                   onClick={() => void chooseSrtOutputPath()}
+                  className="!rounded-r-md"
                 >
                   Chọn file SRT
                 </Button>
               </Space.Compact>
-              <Typography.Text type="secondary" className="mt-2 block text-xs">
-                SRT có thể lưu khác folder với MP3. Nếu chưa chọn, app tự gợi ý cùng tên với MP3.
+              <Typography.Text className="block text-[11px] text-slate-500">
+                Tự động gợi ý lưu cùng tên với file MP3 output.
               </Typography.Text>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <Typography.Text strong>Ngôn ngữ audio</Typography.Text>
+            {/* Settings Grid */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="bg-slate-50/70 p-3.5 rounded-md border border-slate-200/80 space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Typography.Text strong className="text-xs text-slate-700">Ngôn ngữ audio</Typography.Text>
+                  <Tooltip title="Ngôn ngữ chính trong các bài audio để Whisper AI nhận dạng chính xác hơn.">
+                    <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+                  </Tooltip>
+                </div>
                 <Select
-                  className="mt-2 w-full"
+                  className="!w-full"
                   value={language}
                   disabled={processing || whisperSetupBusy}
                   onChange={(value) => saveAudioSettings({ language: value })}
@@ -735,18 +815,24 @@ export default function AudioMergePage() {
                   ]}
                 />
               </div>
-              <div>
-                <Typography.Text strong>Số CPU thread</Typography.Text>
+
+              <div className="bg-slate-50/70 p-3.5 rounded-md border border-slate-200/80 space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Typography.Text strong className="text-xs text-slate-700">Số CPU thread</Typography.Text>
+                  <Tooltip title="Số nhân CPU xử lý song song. Mặc định 4 threads giúp nhận dạng nhanh mà không làm giật đơ ứng dụng.">
+                    <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+                  </Tooltip>
+                </div>
                 <InputNumber
-                  className="mt-2 !w-full"
+                  className="!w-full"
                   min={1}
                   max={8}
                   value={whisperThreads}
                   disabled={processing || whisperSetupBusy}
                   onChange={(value) => saveAudioSettings({ whisperThreads: value ?? 4 })}
                 />
-                <Typography.Text type="secondary" className="mt-2 block text-xs">
-                  Mặc định 4 để app vẫn mượt khi Whisper chạy.
+                <Typography.Text className="block text-[11px] text-slate-500">
+                  Mặc định 4 threads giúp hệ thống luôn mượt mà.
                 </Typography.Text>
               </div>
             </div>
@@ -754,58 +840,70 @@ export default function AudioMergePage() {
         )}
       </Card>
 
-      <div className="flex justify-center">
-        <div className="flex w-full max-w-xl flex-col items-center gap-3">
-          {job && (
-            <Alert
-              className="w-full"
-              type={job.phase === 'error' ? 'error' : job.phase === 'complete' ? 'success' : 'info'}
-              showIcon
-              message={job.message}
-              description={
-                <div>
-                  {job.error && <Typography.Text type="danger">{job.error}</Typography.Text>}
-                  <Progress
-                    className="!mb-0 mt-2"
-                    percent={job.percent}
-                    status={
-                      job.phase === 'error'
-                        ? 'exception'
-                        : job.phase === 'complete'
-                          ? 'success'
-                          : 'active'
-                    }
-                  />
-                  {!processing && (
-                    <Button className="mt-2" size="small" onClick={() => dismissJob(projectId)}>
-                      Đóng trạng thái
-                    </Button>
-                  )}
-                </div>
-              }
-            />
-          )}
-          {missingRequirements.length > 0 && (
-            <Alert
-              className="w-full"
-              type="warning"
-              showIcon
-              message="Chưa thể bắt đầu"
-              description={`Cần ${missingRequirements.join(', ')}.`}
-            />
-          )}
+      {/* Job Running Progress Banner */}
+      {job && (
+        <Alert
+          className="!rounded-lg shadow-sm border border-slate-200"
+          type={job.phase === 'error' ? 'error' : job.phase === 'complete' ? 'success' : 'info'}
+          showIcon
+          message={<span className="font-semibold text-xs">{job.message}</span>}
+          description={
+            <div className="space-y-2 pt-1">
+              {job.error && <Typography.Text type="danger" className="text-xs block">{job.error}</Typography.Text>}
+              <Progress
+                percent={job.percent}
+                status={
+                  job.phase === 'error'
+                    ? 'exception'
+                    : job.phase === 'complete'
+                      ? 'success'
+                      : 'active'
+                }
+              />
+              {!processing && (
+                <Button size="small" onClick={() => dismissJob(projectId)} className="!rounded-md">
+                  Đóng thông báo
+                </Button>
+              )}
+            </div>
+          }
+        />
+      )}
+
+      {/* Floating Bottom Action Bar */}
+      <ActionBar
+        leftContent={
+          missingRequirements.length > 0 ? (
+            <div className="flex items-center gap-1.5 text-amber-700 text-xs font-medium">
+              <WarningOutlined className="text-amber-500 text-sm shrink-0" />
+              <span>Chưa thể ghép: Cần {missingRequirements.join(', ')}.</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
+              <Tag color="volcano" className="!mr-0 font-mono font-semibold">
+                {items.length} audio
+              </Tag>
+              <span>+ {pauseSeconds}s khoảng nghỉ</span>
+              <span className="text-slate-300">|</span>
+              <span className="text-slate-500 font-mono truncate max-w-[300px]">
+                Output: {outputPath.split(/[\\/]/).pop() || 'merged-audio.mp3'}
+              </span>
+            </div>
+          )
+        }
+        rightContent={
           <Button
             type="primary"
-            size="large"
             icon={<AudioOutlined />}
             loading={processing}
             disabled={missingRequirements.length > 0 || whisperSetupBusy || mediaBusy}
             onClick={merge}
+            className="!rounded-md font-medium px-5 shadow-sm"
           >
-            {createSrt ? 'Ghép audio và xuất SRT' : 'Ghép audio'}
+            {createSrt ? 'Ghép audio & Xuất SRT' : 'Ghép audio ngay'}
           </Button>
-        </div>
-      </div>
+        }
+      />
     </main>
   )
 }

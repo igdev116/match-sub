@@ -11,20 +11,26 @@ import {
   Select,
   Space,
   Switch,
+  Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import {
   DeleteOutlined,
+  EyeOutlined,
   FileExcelOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
+  InfoCircleOutlined,
   PictureOutlined,
   PlayCircleOutlined,
   PlusOutlined,
+  QuestionCircleOutlined,
   ReloadOutlined,
   SaveOutlined,
   ScanOutlined,
   VideoCameraAddOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import type {
   AlignmentItem,
@@ -38,8 +44,10 @@ import type {
   SrtEntry,
 } from '../../electron/types'
 import AlignmentPreview from '../components/AlignmentPreview'
+import ActionBar from '../components/ActionBar'
 import BuildProgress from '../components/BuildProgress'
 import FileSelector from '../components/FileSelector'
+import MotionPreviewModal from '../components/MotionPreviewModal'
 import SourcePreview, {
   type SourcePreviewData,
 } from '../components/SourcePreview'
@@ -125,6 +133,10 @@ function hasZoomOutMotion(effect: BuildConfig['motionEffect']): boolean {
   return MOTION_EFFECTS_WITH_ZOOM_OUT.includes(effect)
 }
 
+function hasZoomInMotion(effect: BuildConfig['motionEffect']): boolean {
+  return effect !== 'none' && !hasZoomOutMotion(effect)
+}
+
 function newMotionSequenceItem(effect: BuildConfig['motionEffect']): MotionSequenceItem {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -208,6 +220,13 @@ export default function BuildPage() {
   const [building, setBuilding] = useState(false)
   const [sourcePreview, setSourcePreview] = useState<SourcePreviewData | null>(null)
   const [sourcePreviewLoading, setSourcePreviewLoading] = useState(false)
+  const [motionModalOpen, setMotionModalOpen] = useState(false)
+  const [previewMotionEffect, setPreviewMotionEffect] = useState<BuildConfig['motionEffect']>('zoom-top-left')
+
+  function openMotionPreview(eff?: BuildConfig['motionEffect']) {
+    setPreviewMotionEffect(eff || motionSequence[0]?.effect || 'zoom-top-left')
+    setMotionModalOpen(true)
+  }
 
   useEffect(() => {
     void window.videoBuilder.checkFFmpeg()
@@ -282,6 +301,7 @@ export default function BuildPage() {
     [imagesDirectory, sceneListPath, srtPath],
   )
   const outputDisplayPath = mode === 'clips' ? dirname(outputPath) : outputPath
+  const motionSequenceHasZoomIn = motionSequence.some((item) => hasZoomInMotion(item.effect))
   const motionSequenceHasZoomOut = motionSequence.some((item) => hasZoomOutMotion(item.effect))
   const motionSequenceAllStill = motionSequence.every((item) => item.effect === 'none')
 
@@ -611,11 +631,18 @@ export default function BuildPage() {
 
   return (
     <>
-      <main className="mx-auto max-w-5xl space-y-5 pb-10">
+      <main className="mx-auto max-w-5xl space-y-5 pb-24">
         <div className="space-y-5">
           <Card
-            className="shadow-sm"
-            title="Nguồn dữ liệu"
+            className="!rounded-lg border border-slate-200/80 shadow-sm"
+            title={
+              <div className="flex items-center gap-2">
+                <span>Nguồn dữ liệu dự án</span>
+                <Tooltip title="Tự động quét và tự động nạp Thư mục ảnh, File Excel kịch bản và File phụ đề SRT chỉ với 1 thao tác chọn folder tổng.">
+                  <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+                </Tooltip>
+              </div>
+            }
             extra={
               <Space>
                 <Button
@@ -623,32 +650,48 @@ export default function BuildPage() {
                   loading={sourceInspecting}
                   disabled={busy || !sourceFolder}
                   onClick={() => void refreshSourceFolder()}
+                  className="!rounded-md"
                 >
                   Làm mới
                 </Button>
-                <Button
-                  icon={<FolderOpenOutlined />}
-                  loading={sourceInspecting}
-                  disabled={busy}
-                  onClick={() => void chooseSourceFolder()}
-                >
-                  Chọn folder nguồn
-                </Button>
+                <Tooltip title="Nhấp để chọn 1 thư mục chứa sẵn ảnh, file excel và srt. Hệ thống sẽ tự động nhận diện và điền đầy đủ các ô bên dưới.">
+                  <Button
+                    type="primary"
+                    icon={<FolderOpenOutlined />}
+                    loading={sourceInspecting}
+                    disabled={busy}
+                    onClick={() => void chooseSourceFolder()}
+                    className="!rounded-md"
+                  >
+                    Chọn folder nguồn tự động
+                  </Button>
+                </Tooltip>
               </Space>
             }
           >
-            <div className="space-y-4">
+            <div className="space-y-3">
+              {/* Explanatory Guide Box */}
+              <div className="flex items-start gap-2.5 rounded-md bg-blue-50/70 border border-blue-200/80 p-3 text-xs text-blue-900">
+                <InfoCircleOutlined className="text-blue-600 text-sm shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong className="font-semibold text-blue-950 block mb-0.5">Tự động nạp dữ liệu từ Folder nguồn:</strong>
+                  Khi chọn một <strong>Folder nguồn</strong> tổng (bằng nút phía trên), hệ thống sẽ tự động tìm kiếm và nạp các tệp ảnh scene, file Excel kịch bản và phụ đề SRT tương ứng bên dưới mà bạn không cần chọn từng tệp thủ công.
+                </div>
+              </div>
+
               {sourceFolder && (
-                <div className="rounded-lg bg-slate-50 px-4 py-3">
-                  <Typography.Text type="secondary">Folder nguồn:</Typography.Text>{' '}
-                  <Typography.Text copyable>{sourceFolder}</Typography.Text>
+                <div className="flex items-center justify-between gap-3 rounded-md bg-slate-50 border border-slate-200/70 px-4 py-2 text-xs">
+                  <span className="text-slate-500 font-medium shrink-0">Folder nguồn đã nạp:</span>
+                  <Typography.Text copyable ellipsis className="font-mono text-slate-700">
+                    {sourceFolder}
+                  </Typography.Text>
                 </div>
               )}
               <FileSelector
                 label="Thư mục ảnh"
                 value={imagesDirectory}
                 placeholder="Chọn thư mục chứa ảnh scene"
-                icon={<FolderOpenOutlined className="text-violet-600" />}
+                icon={<FolderOpenOutlined className="text-brand-500" />}
                 buttonLabel="Chọn thư mục"
                 onSelect={chooseDirectory}
                 onPreview={() => void loadSourcePreview('images')}
@@ -656,12 +699,13 @@ export default function BuildPage() {
                 status={sourceErrors.imagesDirectory ? 'error' : undefined}
                 error={sourceErrors.imagesDirectory}
                 metaText={formatPathMeta(sourceInfos.imagesDirectory)}
+                tooltipTitle="Thư mục chứa danh sách hình ảnh minh họa cho các cảnh (scene) trong video."
               />
               <FileSelector
-                label="Scene list"
+                label="Scene list (Excel)"
                 value={sceneListPath}
                 placeholder="Chọn file Excel có cột STT và Nội dung"
-                icon={<FileExcelOutlined className="text-emerald-600" />}
+                icon={<FileExcelOutlined className="text-emerald-500" />}
                 buttonLabel="Chọn file"
                 onSelect={() => chooseFile(['xlsx', 'xls'], setSceneListPath, 'sceneListPath')}
                 onPreview={() => void loadSourcePreview('excel')}
@@ -669,12 +713,13 @@ export default function BuildPage() {
                 status={sourceErrors.sceneListPath ? 'error' : undefined}
                 error={sourceErrors.sceneListPath}
                 metaText={formatPathMeta(sourceInfos.sceneListPath)}
+                tooltipTitle="File bảng tính Excel (.xlsx/.xls) quy định thứ tự hiển thị cảnh và lời thoại tương ứng."
               />
               <FileSelector
-                label="File SRT"
+                label="File phụ đề (SRT)"
                 value={srtPath}
                 placeholder="Chọn file phụ đề .srt"
-                icon={<FileTextOutlined className="text-blue-600" />}
+                icon={<FileTextOutlined className="text-blue-500" />}
                 buttonLabel="Chọn file"
                 onSelect={() => chooseFile(['srt'], setSrtPath, 'srtPath')}
                 onPreview={() => void loadSourcePreview('srt')}
@@ -682,15 +727,16 @@ export default function BuildPage() {
                 status={sourceErrors.srtPath ? 'error' : undefined}
                 error={sourceErrors.srtPath}
                 metaText={formatPathMeta(sourceInfos.srtPath)}
+                tooltipTitle="File phụ đề chuẩn (.srt) chứa các mốc thời gian hiển thị câu thoại chi tiết."
               />
               <FileSelector
-                label={mode === 'clips' ? 'Thư mục lưu clips' : 'Output'}
+                label={mode === 'clips' ? 'Thư mục lưu clips' : 'Output video'}
                 value={outputDisplayPath}
                 placeholder={mode === 'clips' ? 'Chọn folder để lưu nhiều video' : 'Chọn nơi lưu output.mp4'}
                 icon={
                   mode === 'clips'
-                    ? <FolderOpenOutlined className="text-amber-600" />
-                    : <SaveOutlined className="text-amber-600" />
+                    ? <FolderOpenOutlined className="text-amber-500" />
+                    : <SaveOutlined className="text-amber-500" />
                 }
                 buttonLabel={mode === 'clips' ? 'Chọn folder' : 'Chọn nơi lưu'}
                 onSelect={chooseOutput}
@@ -698,30 +744,31 @@ export default function BuildPage() {
                 status={sourceErrors.outputPath ? 'error' : undefined}
                 error={sourceErrors.outputPath}
                 metaText={formatPathMeta(sourceInfos.outputPath)}
+                tooltipTitle={mode === 'clips' ? 'Thư mục đich để lưu danh sách các clips video được tạo ra.' : 'Đường dẫn vị trí lưu file video hoàn chỉnh sau khi xuất.'}
               />
             </div>
           </Card>
 
-          <Card className="shadow-sm" title="Thiết lập video">
+          <Card className="!rounded-lg border border-slate-200/80 shadow-sm" title="Thiết lập video & Hiệu năng">
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               <div>
-                <Typography.Text strong>Chế độ</Typography.Text>
+                <Typography.Text strong className="text-slate-700">Chế độ xuất</Typography.Text>
                 <Radio.Group
-                  className="mt-3 block"
+                  className="mt-2 block"
                   value={mode}
                   onChange={(event) => saveVideoSettings({ mode: event.target.value })}
                   disabled={busy}
                 >
                   <Space direction="vertical">
-                    <Radio value="full">Full video</Radio>
-                    <Radio value="clips">Clips riêng</Radio>
+                    <Radio value="full">Full video (1 file ghép duy nhất)</Radio>
+                    <Radio value="clips">Clips riêng (xuất lẻ từng scene)</Radio>
                   </Space>
                 </Radio.Group>
               </div>
               <div>
-                <Typography.Text strong>FPS</Typography.Text>
+                <Typography.Text strong className="text-slate-700">Tốc độ khung hình (FPS)</Typography.Text>
                 <InputNumber
-                  className="mt-3 !w-full"
+                  className="mt-2 !w-full !rounded-md"
                   min={1}
                   max={120}
                   value={fps}
@@ -730,42 +777,36 @@ export default function BuildPage() {
                 />
               </div>
               <div>
-                <Typography.Text strong>Scene build song song</Typography.Text>
-                <InputNumber
-                  className="mt-3 !w-full"
-                  min={1}
-                  max={8}
-                  step={1}
-                  precision={0}
-                  value={sceneConcurrency}
-                  onChange={(value) => saveVideoSettings({ sceneConcurrency: value ?? 1 })}
+                <Typography.Text strong className="text-slate-700">Độ phân giải (Resolution)</Typography.Text>
+                <Select
+                  className="mt-2 w-full !rounded-md"
+                  value={resolution}
+                  options={RESOLUTIONS.map((value) => ({ value, label: value }))}
+                  onChange={(value) => saveVideoSettings({ resolution: value })}
                   disabled={busy}
                 />
-                <Typography.Text className="mt-2 block" type="secondary">
-                  Mặc định 2. Tăng lên 3–4 nếu máy khỏe; quá cao dễ làm lag.
-                </Typography.Text>
               </div>
               <div>
-                <Typography.Text strong>Chế độ hiệu năng</Typography.Text>
+                <Typography.Text strong className="text-slate-700">Chế độ hiệu năng</Typography.Text>
                 <Select
-                  className="mt-3 w-full"
+                  className="mt-2 w-full !rounded-md"
                   value={buildPerformance}
                   options={[
-                    { value: 'cool', label: 'Mát máy / ít lag' },
+                    { value: 'cool', label: 'Mát máy / ít lag (Khuyên dùng)' },
                     { value: 'balanced', label: 'Cân bằng' },
                     { value: 'quality', label: 'Chất lượng cao' },
                   ]}
                   onChange={changeBuildPerformance}
                   disabled={busy}
                 />
-                <Typography.Text className="mt-2 block" type="secondary">
-                  Mát máy sẽ giảm oversample, không nhân đôi render FPS và encode nhẹ hơn.
+                <Typography.Text className="mt-1 block text-xs" type="secondary">
+                  Mát máy giúp giảm nổ quạt và quá nhiệt CPU khi render.
                 </Typography.Text>
               </div>
               <div>
-                <Typography.Text strong>FFmpeg threads</Typography.Text>
+                <Typography.Text strong className="text-slate-700">FFmpeg threads</Typography.Text>
                 <InputNumber
-                  className="mt-3 !w-full"
+                  className="mt-2 !w-full !rounded-md"
                   min={1}
                   max={16}
                   step={1}
@@ -774,217 +815,328 @@ export default function BuildPage() {
                   onChange={(value) => saveVideoSettings({ ffmpegThreads: value ?? 1 })}
                   disabled={busy}
                 />
-                <Typography.Text className="mt-2 block" type="secondary">
-                  Giữ 1–2 để đỡ nóng máy. Đây là thread bên trong mỗi FFmpeg.
+                <Typography.Text className="mt-1 block text-xs" type="secondary">
+                  Giữ 1–2 thread để máy hoạt động êm ái.
                 </Typography.Text>
               </div>
               <div>
-                <Typography.Text strong>Nghỉ giữa scene</Typography.Text>
+                <Typography.Text strong className="text-slate-700">Scene build song song</Typography.Text>
                 <InputNumber
-                  className="mt-3 !w-full"
-                  min={0}
-                  max={5000}
-                  step={100}
+                  className="mt-2 !w-full !rounded-md"
+                  min={1}
+                  max={8}
+                  step={1}
                   precision={0}
-                  addonAfter="ms"
-                  value={scenePauseMs}
-                  onChange={(value) => saveVideoSettings({ scenePauseMs: value ?? 0 })}
+                  value={sceneConcurrency}
+                  onChange={(value) => saveVideoSettings({ sceneConcurrency: value ?? 1 })}
                   disabled={busy}
                 />
-                <Typography.Text className="mt-2 block" type="secondary">
-                  250–500ms giúp máy có nhịp hạ tải, đổi lại build lâu hơn.
+                <Typography.Text className="mt-1 block text-xs" type="secondary">
+                  Số scene xử lý đồng thời.
                 </Typography.Text>
-              </div>
-              <div>
-                <Typography.Text strong>Resolution</Typography.Text>
-                <Select
-                  className="mt-3 w-full"
-                  value={resolution}
-                  options={RESOLUTIONS.map((value) => ({ value, label: value }))}
-                  onChange={(value) => saveVideoSettings({ resolution: value })}
-                  disabled={busy}
-                />
               </div>
             </div>
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+
+            <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+              {/* Header bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
                 <div>
-                  <Typography.Text strong>Chuyển động ảnh</Typography.Text>
-                  <Typography.Text className="mt-1 block" type="secondary">
+                  <div className="flex items-center gap-2">
+                    <Typography.Text strong className="text-slate-800 text-sm">Chuyển động camera (Motion)</Typography.Text>
+                    <Tooltip title="Tự động phóng to / thu nhỏ ảnh trong quá trình chạy clip giúp video sinh động và cuốn hút hơn.">
+                      <InfoCircleOutlined className="text-slate-400 cursor-help text-xs" />
+                    </Tooltip>
+                  </div>
+                  <Typography.Text className="block text-xs" type="secondary">
                     {motionEnabled
-                      ? 'Chọn chuyển động, mức zoom và thời gian giữ khung hình cuối.'
-                      : 'Ảnh sẽ đứng yên trong toàn bộ scene; build nhẹ và ít nóng máy hơn.'}
+                      ? 'Áp dụng hiệu ứng zoom mượt cho từng hình ảnh scene.'
+                      : 'Hình ảnh giữ nguyên khung hình tĩnh.'}
                   </Typography.Text>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Typography.Text strong>Sử dụng chuyển động ảnh</Typography.Text>
-                  <Switch
-                    checked={motionEnabled}
-                    disabled={busy}
-                    onChange={(checked) => saveVideoSettings({ motionEnabled: checked })}
-                  />
+                  <Button
+                    size="small"
+                    icon={<EyeOutlined />}
+                    onClick={() => openMotionPreview()}
+                    className="!rounded-md border-brand-200 text-brand-600 hover:text-brand-700 bg-white font-medium text-xs shadow-sm"
+                  >
+                    Xem minh họa chuyển động
+                  </Button>
+                  <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-md border border-slate-200">
+                    <Typography.Text strong className="text-xs text-slate-600">Bật hiệu ứng</Typography.Text>
+                    <Switch
+                      size="small"
+                      checked={motionEnabled}
+                      disabled={busy}
+                      onChange={(checked) => saveVideoSettings({ motionEnabled: checked })}
+                    />
+                  </div>
                 </div>
               </div>
+
               {motionEnabled ? (
-                <div className="grid gap-5 md:grid-cols-2">
-                <div className="md:col-span-2">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <Typography.Text strong>Danh sách chuyển động</Typography.Text>
-                      <Typography.Text className="mt-1 block" type="secondary">
-                        Nếu có 2 chuyển động thì video 1 dùng dòng 1, video 2 dùng dòng 2, video 3 quay lại dòng 1.
-                      </Typography.Text>
-                    </div>
-                    <Button
-                      icon={<PlusOutlined />}
-                      disabled={busy}
-                      onClick={addMotionSequenceItem}
-                    >
-                      Thêm chuyển động
-                    </Button>
-                  </div>
-                  <div className="mt-3 space-y-3">
-                    {motionSequence.map((item, index) => (
-                      <div
-                        key={item.id}
-                        className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[100px_1fr_auto]"
-                      >
-                        <div className="flex items-center">
-                          <Typography.Text strong>Video {index + 1}</Typography.Text>
-                        </div>
-                        <Select
-                          className="w-full"
-                          value={item.effect}
-                          options={MOTION_EFFECT_OPTIONS}
-                          onChange={(value) => updateMotionSequenceItem(item.id, value)}
-                          disabled={busy}
-                        />
-                        <Button
-                          danger
-                          icon={<DeleteOutlined />}
-                          disabled={busy || motionSequence.length <= 1}
-                          onClick={() => removeMotionSequenceItem(item.id)}
-                        >
-                          Xoá
-                        </Button>
+                <div className="space-y-4">
+                  {/* 1. Sequence List */}
+                  <div className="bg-white rounded-md border border-slate-200 p-3.5 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Typography.Text strong className="text-xs text-slate-700">Chuỗi chuyển động video</Typography.Text>
+                        <Tooltip title="Các kiểu zoom trong danh sách sẽ lần lượt được áp dụng cho từng clip trong video theo thứ tự (Clip 1 -> Clip 2 -> Clip 3 -> xoay vòng lại).">
+                          <QuestionCircleOutlined className="text-slate-400 cursor-help text-xs" />
+                        </Tooltip>
                       </div>
-                    ))}
+                      <Button
+                        size="small"
+                        icon={<PlusOutlined />}
+                        disabled={busy}
+                        onClick={addMotionSequenceItem}
+                        className="!rounded-md"
+                      >
+                        Thêm kiểu zoom
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {motionSequence.map((item, index) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50/60 p-2.5 hover:bg-slate-50 transition-colors"
+                        >
+                          <Tag color="default" className="!mr-0 font-mono text-xs font-semibold text-slate-700 shrink-0 px-2.5 py-0.5">
+                            Clip {index + 1}
+                          </Tag>
+                          <Select
+                            className="flex-1 !rounded-md font-medium text-slate-700"
+                            value={item.effect}
+                            options={MOTION_EFFECT_OPTIONS}
+                            onChange={(value) => updateMotionSequenceItem(item.id, value)}
+                            disabled={busy}
+                          />
+                          <Button
+                            icon={<EyeOutlined />}
+                            onClick={() => openMotionPreview(item.effect)}
+                            title="Xem minh họa chuyển động này"
+                            className="!rounded-md text-slate-600 hover:text-brand-600 font-medium shrink-0"
+                          >
+                            Mô phỏng
+                          </Button>
+                          <Button
+                            danger
+                            icon={<DeleteOutlined />}
+                            disabled={busy || motionSequence.length <= 1}
+                            onClick={() => removeMotionSequenceItem(item.id)}
+                            className="!rounded-md shrink-0"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <Typography.Text strong>Zoom vào tối đa</Typography.Text>
-                  <InputNumber
-                    className="mt-3 !w-full"
-                    min={0}
-                    max={50}
-                    step={1}
-                    precision={1}
-                    addonAfter="%"
-                    value={motionZoomPercent}
-                    onChange={(value) => saveVideoSettings({ motionZoomPercent: value ?? 8 })}
-                    disabled={busy || motionSequenceAllStill}
-                  />
-                  <Typography.Text className="mt-2 block" type="secondary">
-                    Dùng cho các preset zoom vào: 100% → {(100 + motionZoomPercent).toFixed(1)}%.
-                  </Typography.Text>
-                </div>
-                <div>
-                  <Typography.Text strong>Zoom từ trong ra - mức bắt đầu</Typography.Text>
-                  <InputNumber
-                    className="mt-3 !w-full"
-                    min={0}
-                    max={50}
-                    step={1}
-                    precision={1}
-                    addonAfter="%"
-                    value={motionZoomOutStartPercent}
-                    onChange={(value) => saveVideoSettings({ motionZoomOutStartPercent: value ?? 12 })}
-                    disabled={busy || !motionSequenceHasZoomOut}
-                  />
-                  <Typography.Text className="mt-2 block" type="secondary">
-                    Dùng cho zoom từ trong ra: {(100 + motionZoomOutStartPercent).toFixed(1)}% → 100%.
-                  </Typography.Text>
-                </div>
-                <div className="md:col-span-2">
-                  <Typography.Text strong>Giữ khung hình cuối</Typography.Text>
-                  <div>
-                    <Radio.Group
-                      className="mt-3"
-                      value={motionHoldMode}
-                      onChange={(event) => saveVideoSettings({ motionHoldMode: event.target.value })}
-                      disabled={busy || motionSequenceAllStill}
-                    >
-                      <Radio value="percent">Theo % scene</Radio>
-                      <Radio value="seconds">Số giây cố định</Radio>
-                    </Radio.Group>
+
+                  {/* 2. Advanced Tuning Parameters Grid */}
+                  <div className="bg-white rounded-md border border-slate-200 p-3.5 space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                      <Typography.Text strong className="text-xs text-slate-700">Cấu hình thông số Zoom & Giữ khung hình</Typography.Text>
+                      <Tooltip title="Tùy chỉnh độ phóng to/thu nhỏ tối đa và thời gian ảnh đứng yên ở cuối mỗi clip.">
+                        <InfoCircleOutlined className="text-slate-400 cursor-help text-xs" />
+                      </Tooltip>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {/* Zoom In Max */}
+                      <div className="bg-slate-50/60 p-3 rounded-md border border-slate-200/80 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Typography.Text strong className="text-xs text-slate-700">Zoom vào tối đa (%)</Typography.Text>
+                            <Tooltip
+                              title={
+                                <span>
+                                  Tỷ lệ phóng to tối đa khi dùng các kiểu Zoom Vào. Hiện bạn đang cài <strong>{motionZoomPercent}%</strong>, hình ảnh sẽ phóng to từ <strong>100%</strong> đến <strong>{(100 + motionZoomPercent).toFixed(1)}%</strong>.
+                                </span>
+                              }
+                            >
+                              <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+                            </Tooltip>
+                          </div>
+                          <Tag color={busy || motionSequenceAllStill || !motionSequenceHasZoomIn ? 'default' : 'red'} className="!mr-0 text-[10px] font-mono">
+                            100% → {(100 + motionZoomPercent).toFixed(0)}%
+                          </Tag>
+                        </div>
+                        <InputNumber
+                          className="!w-full"
+                          min={0}
+                          max={50}
+                          step={1}
+                          precision={1}
+                          addonAfter="%"
+                          value={motionZoomPercent}
+                          onChange={(value) => saveVideoSettings({ motionZoomPercent: value ?? 8 })}
+                          disabled={busy || motionSequenceAllStill || !motionSequenceHasZoomIn}
+                        />
+                        {motionSequenceAllStill ? (
+                          <Typography.Text className="block text-[11px] text-amber-600 font-medium flex items-center gap-1">
+                            <WarningOutlined /> Khóa: Tất cả clip trong danh sách đều đang chọn Đứng yên (Tĩnh).
+                          </Typography.Text>
+                        ) : !motionSequenceHasZoomIn ? (
+                          <Typography.Text className="block text-[11px] text-amber-600 font-medium flex items-center gap-1">
+                            <WarningOutlined /> Khóa: Chuỗi chuyển động chưa có kiểu Zoom Vào nào.
+                          </Typography.Text>
+                        ) : (
+                          <Typography.Text className="block text-[11px] text-slate-500">
+                            Biên độ phóng đại cho tất cả kiểu Zoom Vào.
+                          </Typography.Text>
+                        )}
+                      </div>
+
+                      {/* Zoom Out Start */}
+                      <div className="bg-slate-50/60 p-3 rounded-md border border-slate-200/80 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Typography.Text strong className="text-xs text-slate-700">Zoom ra - bắt đầu (%)</Typography.Text>
+                            <Tooltip
+                              title={
+                                <span>
+                                  Tỷ lệ phóng to ban đầu khi dùng các kiểu Zoom Ra. Hiện bạn đang cài <strong>{motionZoomOutStartPercent}%</strong>, hình ảnh sẽ bắt đầu từ <strong>{(100 + motionZoomOutStartPercent).toFixed(1)}%</strong> và thu nhỏ về <strong>100%</strong>.
+                                </span>
+                              }
+                            >
+                              <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+                            </Tooltip>
+                          </div>
+                          <Tag color={busy || !motionSequenceHasZoomOut ? 'default' : 'cyan'} className="!mr-0 text-[10px] font-mono">
+                            {(100 + motionZoomOutStartPercent).toFixed(0)}% → 100%
+                          </Tag>
+                        </div>
+                        <InputNumber
+                          className="!w-full"
+                          min={0}
+                          max={50}
+                          step={1}
+                          precision={1}
+                          addonAfter="%"
+                          value={motionZoomOutStartPercent}
+                          onChange={(value) => saveVideoSettings({ motionZoomOutStartPercent: value ?? 12 })}
+                          disabled={busy || !motionSequenceHasZoomOut}
+                        />
+                        {!motionSequenceHasZoomOut ? (
+                          <Typography.Text className="block text-[11px] text-amber-600 font-medium flex items-start gap-1">
+                            <WarningOutlined className="shrink-0 mt-0.5" />
+                            <span>Khóa: Danh sách chuỗi chuyển động chưa có kiểu Zoom Ra nào. (Hãy chọn một kiểu Zoom từ trong ra như "Zoom từ trong ra — góc trái trên" ở trên để kích hoạt).</span>
+                          </Typography.Text>
+                        ) : (
+                          <Typography.Text className="block text-[11px] text-slate-500">
+                            Mức thu nhỏ khởi đầu cho kiểu Zoom Ra.
+                          </Typography.Text>
+                        )}
+                      </div>
+
+                      {/* Hold Phase */}
+                      <div className="md:col-span-2 bg-slate-50/60 p-3 rounded-md border border-slate-200/80 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <Typography.Text strong className="text-xs text-slate-700">Giữ khung hình cuối scene (Hold Phase)</Typography.Text>
+                            <Tooltip
+                              title={
+                                <span>
+                                  Khoảng thời gian ảnh đứng yên cố định ở cuối clip trước khi chuyển sang cảnh mới. {motionHoldMode === 'seconds' ? (
+                                    <>Hiện tại cài <strong>{motionHoldSeconds}s</strong> cuối mỗi clip sẽ giữ hình ảnh tĩnh.</>
+                                  ) : (
+                                    <>Hiện tại cài <strong>{motionHoldPercent}%</strong> thời lượng cuối clip sẽ giữ hình ảnh tĩnh.</>
+                                  )}
+                                </span>
+                              }
+                            >
+                              <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
+                            </Tooltip>
+                          </div>
+                          <Radio.Group
+                            size="small"
+                            value={motionHoldMode}
+                            onChange={(event) => saveVideoSettings({ motionHoldMode: event.target.value })}
+                            disabled={busy || motionSequenceAllStill}
+                          >
+                            <Radio value="percent">Theo % scene</Radio>
+                            <Radio value="seconds">Số giây cố định</Radio>
+                          </Radio.Group>
+                        </div>
+
+                        {motionHoldMode === 'seconds' ? (
+                          <InputNumber
+                            className="!w-full"
+                            min={0}
+                            max={300}
+                            step={0.5}
+                            precision={2}
+                            addonAfter="giây"
+                            value={motionHoldSeconds}
+                            onChange={(value) => saveVideoSettings({ motionHoldSeconds: value ?? 2 })}
+                            disabled={busy || motionSequenceAllStill}
+                          />
+                        ) : (
+                          <InputNumber
+                            className="!w-full"
+                            min={0}
+                            max={90}
+                            step={5}
+                            precision={1}
+                            addonAfter="%"
+                            value={motionHoldPercent}
+                            onChange={(value) => saveVideoSettings({ motionHoldPercent: value ?? 20 })}
+                            disabled={busy || motionSequenceAllStill}
+                          />
+                        )}
+
+                        {motionSequenceAllStill ? (
+                          <Typography.Text className="block text-[11px] text-amber-600 font-medium flex items-center gap-1">
+                            <WarningOutlined /> Khóa: Tất cả clip đều Đứng yên nên không cần phân đoạn giữ khung hình.
+                          </Typography.Text>
+                        ) : (
+                          <Typography.Text className="block text-[11px] text-slate-500">
+                            {motionHoldMode === 'seconds'
+                              ? `Giữ tĩnh ${motionHoldSeconds}s cuối mỗi clip. (Tự điều chỉnh nếu clip ngắn hơn).`
+                              : `${motionHoldPercent}% thời lượng cuối clip đứng yên (ví dụ: clip 10s sẽ đứng yên ${((10 * motionHoldPercent) / 100).toFixed(1)}s cuối).`}
+                          </Typography.Text>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  {motionHoldMode === 'seconds' ? (
-                    <InputNumber
-                      className="mt-3 !w-full"
-                      min={0}
-                      max={300}
-                      step={0.5}
-                      precision={2}
-                      addonAfter="giây"
-                      value={motionHoldSeconds}
-                      onChange={(value) => saveVideoSettings({ motionHoldSeconds: value ?? 2 })}
-                      disabled={busy || motionSequenceAllStill}
-                    />
-                  ) : (
-                    <InputNumber
-                      className="mt-3 !w-full"
-                      min={0}
-                      max={90}
-                      step={5}
-                      precision={1}
-                      addonAfter="%"
-                      value={motionHoldPercent}
-                      onChange={(value) => saveVideoSettings({ motionHoldPercent: value ?? 20 })}
-                      disabled={busy || motionSequenceAllStill}
-                    />
-                  )}
-                  <Typography.Text className="mt-2 block" type="secondary">
-                    {motionHoldMode === 'seconds'
-                      ? `Giữ cố định ${motionHoldSeconds}s cuối scene. Nếu scene ngắn hơn thì tự clamp theo duration scene.`
-                      : `${motionHoldPercent}% cuối scene đứng yên; scene 10 giây tương đương ${(10 * motionHoldPercent / 100).toFixed(1)} giây.`}
-                  </Typography.Text>
-                </div>
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-6 text-center">
-                  <Typography.Text strong>Chế độ ảnh tĩnh đang bật</Typography.Text>
-                  <Typography.Text className="mt-1 block" type="secondary">
-                    Các thiết lập chuyển động vẫn được giữ lại và sẽ khôi phục khi bạn bật lại.
-                  </Typography.Text>
+                <div className="rounded-md border border-dashed border-slate-300 bg-white p-3 text-center text-xs text-slate-500">
+                  Ảnh sẽ đứng yên trong suốt thời lượng scene để tiết kiệm tài nguyên.
                 </div>
               )}
             </div>
-            <div className="mt-6 border-t border-slate-200 pt-5">
+
+            <div className="mt-4 border-t border-slate-200/80 pt-4">
               <FileSelector
                 label="Ảnh test hiệu ứng"
                 value={sampleImagePath}
-                placeholder="Chọn một ảnh để build thử clip 10 giây"
-                icon={<PictureOutlined className="text-fuchsia-600" />}
+                placeholder="Chọn một ảnh để render clip test 10s"
+                icon={<PictureOutlined className="text-fuchsia-500" />}
                 buttonLabel="Chọn ảnh"
                 onSelect={chooseSampleImage}
                 disabled={busy}
               />
-              <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+              <div className="mt-2 flex items-center justify-end gap-2">
                 {sampleVideoPath && (
                   <Button
+                    size="small"
                     icon={<FolderOpenOutlined />}
                     onClick={() => void window.videoBuilder.showInFolder(sampleVideoPath)}
                     disabled={sampleBuilding}
+                    className="!rounded-md"
                   >
-                    Mở file test
+                    Xem clip test
                   </Button>
                 )}
                 <Button
+                  size="small"
                   type="dashed"
                   icon={<VideoCameraAddOutlined />}
                   loading={sampleBuilding}
                   onClick={startSampleBuild}
                   disabled={!canBuildSample}
+                  className="!rounded-md"
                 >
                   Build thử 10 giây
                 </Button>
@@ -993,34 +1145,47 @@ export default function BuildPage() {
           </Card>
 
           {!ffmpeg.checking && !ffmpeg.available && (
-            <Card className="border-red-200 bg-red-50">
+            <Card className="!rounded-lg border-red-200 bg-red-50">
               <Typography.Text type="danger">
-                {ffmpeg.repairMessage || 'Không tìm thấy FFmpeg.'}
+                {ffmpeg.repairMessage || 'Không tìm thấy bộ xử lý FFmpeg.'}
               </Typography.Text>
             </Card>
           )}
+        </div>
+      </main>
 
-          <div className="flex flex-col justify-center gap-3 sm:flex-row">
+      {/* Floating Bottom Bar */}
+      <ActionBar
+        leftContent={
+          <div className="flex items-center gap-2.5 text-xs">
+            <span className={`inline-block w-2 h-2 rounded-full ${inputsReady ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+            <span className="text-slate-600 font-medium">
+              {inputsReady ? 'Nguồn dữ liệu hợp lệ' : 'Đang chờ chọn đủ tệp nguồn'}
+            </span>
+          </div>
+        }
+        rightContent={
+          <>
             <Button
-              size="large"
               icon={<ScanOutlined />}
               onClick={preview}
               disabled={!inputsReady || busy}
+              className="!rounded-md font-medium"
             >
               Preview Alignment
             </Button>
             <Button
-              size="large"
               type="primary"
               icon={<PlayCircleOutlined />}
               onClick={startBuild}
               disabled={!canBuild}
+              className="!rounded-md font-medium px-5 shadow-sm"
             >
               Build Video
             </Button>
-          </div>
-        </div>
-      </main>
+          </>
+        }
+      />
 
       <AlignmentPreview
         open={previewOpen}
@@ -1047,6 +1212,19 @@ export default function BuildPage() {
         progress={progress}
         onStop={() => void window.videoBuilder.stopBuild()}
         onClose={() => !building && setProgressOpen(false)}
+      />
+      <MotionPreviewModal
+        open={motionModalOpen}
+        effect={previewMotionEffect}
+        motionZoomPercent={motionZoomPercent}
+        motionZoomOutStartPercent={motionZoomOutStartPercent}
+        motionHoldMode={motionHoldMode}
+        motionHoldPercent={motionHoldPercent}
+        motionHoldSeconds={motionHoldSeconds}
+        sampleImagePath={sampleImagePath}
+        onEffectChange={(eff) => setPreviewMotionEffect(eff)}
+        onSettingsChange={(newSettings) => saveVideoSettings(newSettings)}
+        onClose={() => setMotionModalOpen(false)}
       />
     </>
   )

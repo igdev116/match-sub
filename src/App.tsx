@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
-import { App as AntApp, ConfigProvider } from 'antd'
+import { lazy, Suspense, useEffect, useRef, useState, useTransition } from 'react'
+import { App as AntApp, ConfigProvider, Spin } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import AppShell, { type AppMenuKey } from './layouts/AppShell'
-import AudioMergePage from './pages/AudioMergePage'
-import BuildPage from './pages/BuildPage'
 import ProjectPage from './pages/ProjectPage'
-import VideoShufflePage from './pages/VideoShufflePage'
 import { useProjectStore } from './stores/useProjectStore'
 import { useAudioMergeStore } from './stores/useAudioMergeStore'
 import type { AppToolKey } from './layouts/AppShell'
+
+const BuildPage = lazy(() => import('./pages/BuildPage'))
+const AudioMergePage = lazy(() => import('./pages/AudioMergePage'))
+const VideoShufflePage = lazy(() => import('./pages/VideoShufflePage'))
 
 function projectMenuKey(projectId: string, tool: AppToolKey): AppMenuKey {
   return `project:${projectId}:${tool}`
@@ -64,6 +65,7 @@ export default function App() {
   const [visitedMenus, setVisitedMenus] = useState<Set<AppMenuKey>>(
     () => new Set<AppMenuKey>(['project-manager']),
   )
+  const [, startTransition] = useTransition()
 
   useEffect(() => {
     void loadProjects().then((state) => {
@@ -72,12 +74,14 @@ export default function App() {
   }, [loadProjects])
 
   function navigate(key: AppMenuKey) {
-    setActiveMenu(key)
-    setVisitedMenus((current) => {
-      if (current.has(key)) return current
-      const next = new Set(current)
-      next.add(key)
-      return next
+    startTransition(() => {
+      setActiveMenu(key)
+      setVisitedMenus((current) => {
+        if (current.has(key)) return current
+        const next = new Set(current)
+        next.add(key)
+        return next
+      })
     })
   }
 
@@ -102,9 +106,43 @@ export default function App() {
       locale={viVN}
       theme={{
         token: {
-          colorPrimary: '#6d5dfc',
-          borderRadius: 10,
+          colorPrimary: '#eb4e43',
+          colorLink: '#eb4e43',
+          colorSuccess: '#10b981',
+          colorWarning: '#f59e0b',
+          colorError: '#ef4444',
+          colorInfo: '#3b82f6',
+          borderRadius: 6,
           fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, sans-serif',
+          colorBgContainer: '#ffffff',
+          colorBgLayout: '#f8fafc',
+        },
+        components: {
+          Button: {
+            borderRadius: 6,
+            controlHeight: 36,
+            controlHeightLG: 42,
+            fontWeight: 500,
+          },
+          Card: {
+            borderRadiusLG: 8,
+            boxShadowSecondary: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)',
+          },
+          Input: {
+            borderRadius: 6,
+            controlHeight: 36,
+          },
+          InputNumber: {
+            borderRadius: 6,
+            controlHeight: 36,
+          },
+          Select: {
+            borderRadius: 6,
+            controlHeight: 36,
+          },
+          Modal: {
+            borderRadiusLG: 8,
+          },
         },
       }}
     >
@@ -121,21 +159,29 @@ export default function App() {
               onOpenProject={(projectId) => navigate(projectMenuKey(projectId, 'video-builder'))}
             />
           </div>
-          {activeProject && visitedMenus.has(activeMenu) && activeTool === 'video-builder' && (
-            <div className="block">
-              <BuildPage key={activeProject.id} />
-            </div>
-          )}
-          {activeProject && visitedMenus.has(activeMenu) && activeTool === 'audio-merge' && (
-            <div className="block">
-              <AudioMergePage key={activeProject.id} />
-            </div>
-          )}
-          {activeProject && visitedMenus.has(activeMenu) && activeTool === 'video-shuffle' && (
-            <div className="block">
-              <VideoShufflePage key={activeProject.id} />
-            </div>
-          )}
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <Spin size="large" />
+              </div>
+            }
+          >
+            {activeProject && visitedMenus.has(activeMenu) && activeTool === 'video-builder' && (
+              <div className="block">
+                <BuildPage key={activeProject.id} />
+              </div>
+            )}
+            {activeProject && visitedMenus.has(activeMenu) && activeTool === 'audio-merge' && (
+              <div className="block">
+                <AudioMergePage key={activeProject.id} />
+              </div>
+            )}
+            {activeProject && visitedMenus.has(activeMenu) && activeTool === 'video-shuffle' && (
+              <div className="block">
+                <VideoShufflePage key={activeProject.id} />
+              </div>
+            )}
+          </Suspense>
           {loadingProjects && null}
         </AppShell>
       </AntApp>

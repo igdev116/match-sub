@@ -34,6 +34,7 @@ export default function AppShell({
 }: AppShellProps) {
   const collapsed = useSettingsStore((state) => state.sidebarCollapsed)
   const setCollapsed = useSettingsStore((state) => state.setSidebarCollapsed)
+  const currentProject = projects.find((p) => p.id === activeProjectId)
   const menuItems: MenuProps['items'] = [
     {
       key: 'workspace',
@@ -122,16 +123,32 @@ export default function AppShell({
       </Sider>
 
       <Layout className="min-w-0">
-        <Header className="app-header">
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            aria-label={collapsed ? 'Mở sidebar' : 'Thu gọn sidebar'}
-          />
-          <Typography.Text type="secondary">
-            {activeProjectId ? 'Project workspace' : 'Chọn hoặc tạo dự án để bắt đầu'}
-          </Typography.Text>
+        <Header className="app-header justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              aria-label={collapsed ? 'Mở sidebar' : 'Thu gọn sidebar'}
+            />
+            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+              {currentProject ? (
+                <>
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Dự án:</span>
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-brand-50 text-brand-600 border border-brand-200 truncate">
+                    {currentProject.name}
+                  </span>
+                </>
+              ) : (
+                <Typography.Text type="secondary" className="text-xs">
+                  Chọn hoặc tạo dự án để bắt đầu
+                </Typography.Text>
+              )}
+            </div>
+          </div>
+          <div className="text-xs font-medium text-slate-400">
+            Media Studio v1.0.6
+          </div>
         </Header>
         <Content className="app-content">{children}</Content>
       </Layout>

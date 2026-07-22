@@ -93,117 +93,145 @@ export default function ProjectPage({ onOpenProject }: ProjectPageProps) {
 
   return (
     <main className="mx-auto max-w-5xl space-y-5 pb-10">
-      <header className="page-hero">
-        <Typography.Title className="!mb-1 !text-white" level={2}>
-          <ProjectOutlined /> Quản lý dự án
-        </Typography.Title>
-        <Typography.Text className="!text-white/70">
-          Tạo và quản lý các dự án riêng biệt cho Video Builder / Ghép audio
-        </Typography.Text>
-      </header>
-
       <Card
-        title="Dự án"
+        title={`Danh sách dự án (${projects.length})`}
+        className="!rounded-lg border border-slate-200/80 shadow-sm"
         extra={
           <Button
             type="primary"
             icon={<PlusOutlined />}
             loading={busy}
             onClick={() => setCreateOpen(true)}
+            className="!rounded-md shadow-sm"
           >
             Tạo dự án mới
           </Button>
         }
       >
         {projects.length === 0 ? (
-          <Empty description="Chưa có dự án">
+          <Empty description="Chưa có dự án nào được khởi tạo">
             <Button
               type="primary"
               icon={<PlusOutlined />}
               loading={busy}
               onClick={() => setCreateOpen(true)}
+              className="!rounded-md"
             >
-              Tạo dự án mới
+              Tạo dự án đầu tiên
             </Button>
           </Empty>
         ) : (
           <List
-            bordered
+            grid={{ gutter: 16, xs: 1, sm: 1, md: 2, lg: 2, xl: 2, xxl: 2 }}
             dataSource={projects}
-            renderItem={(project) => (
-              <List.Item
-                actions={[
-                  editingId === project.id ? (
-                    <Button
-                      key="save"
-                      type="primary"
-                      disabled={busy}
-                      onClick={() => void saveName(project.id)}
-                    >
-                      Lưu
-                    </Button>
-                  ) : (
-                    <Button
-                      key="edit"
-                      icon={<EditOutlined />}
-                      disabled={busy}
-                      onClick={() => {
-                        setEditingId(project.id)
-                        setEditingName(project.name)
-                      }}
-                    />
-                  ),
-                  <Button
-                    key="open"
-                    type="primary"
-                    icon={<FolderOpenOutlined />}
-                    disabled={busy}
-                    onClick={() => void openProject(project.id)}
+            renderItem={(project) => {
+              const isActive = project.id === activeProjectId
+              return (
+                <List.Item>
+                  <div
+                    className={`group relative rounded-lg border p-4 transition-all ${
+                      isActive
+                        ? 'border-brand-500 bg-brand-50/20 shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+                    }`}
                   >
-                    Mở
-                  </Button>,
-                  <Popconfirm
-                    key="delete"
-                    title="Xóa khỏi danh sách app?"
-                    description="Folder thật sẽ không bị xóa."
-                    okText="Xóa"
-                    cancelText="Hủy"
-                    onConfirm={() => void removeProject(project.id)}
-                  >
-                    <Button danger icon={<DeleteOutlined />} disabled={busy} />
-                  </Popconfirm>,
-                ]}
-              >
-                <div className="min-w-0 flex-1">
-                  <Space className="mb-1" wrap>
-                    {editingId === project.id ? (
-                      <Input
-                        className="w-72"
-                        value={editingName}
-                        onChange={(event) => setEditingName(event.target.value)}
-                        onPressEnter={() => void saveName(project.id)}
-                      />
-                    ) : (
-                      <Typography.Text strong>{project.name}</Typography.Text>
-                    )}
-                    {project.id === activeProjectId && <Tag color="success">Đang mở</Tag>}
-                  </Space>
-                  <Typography.Text className="block" type="secondary" copyable>
-                    {project.rootPath}
-                  </Typography.Text>
-                  <Typography.Text className="block text-xs" type="secondary">
-                    Cập nhật {dayjs(project.updatedAt).format('DD/MM/YYYY HH:mm')}
-                  </Typography.Text>
-                </div>
-              </List.Item>
-            )}
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0 flex-1">
+                        {editingId === project.id ? (
+                          <Input
+                            className="w-full !rounded-md"
+                            value={editingName}
+                            onChange={(event) => setEditingName(event.target.value)}
+                            onPressEnter={() => void saveName(project.id)}
+                            autoFocus
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Typography.Text strong className="text-base text-slate-800 truncate">
+                              {project.name}
+                            </Typography.Text>
+                            {isActive && (
+                              <Tag color="error" className="!rounded !mr-0 font-medium">
+                                Đang mở
+                              </Tag>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {editingId === project.id ? (
+                          <Button
+                            size="small"
+                            type="primary"
+                            disabled={busy}
+                            onClick={() => void saveName(project.id)}
+                            className="!rounded-md"
+                          >
+                            Lưu
+                          </Button>
+                        ) : (
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<EditOutlined />}
+                            disabled={busy}
+                            onClick={() => {
+                              setEditingId(project.id)
+                              setEditingName(project.name)
+                            }}
+                            className="!rounded-md text-slate-400 hover:text-slate-600"
+                          />
+                        )}
+                        <Popconfirm
+                          title="Xóa khỏi danh sách app?"
+                          description="Folder thật sẽ không bị xóa."
+                          okText="Xóa"
+                          cancelText="Hủy"
+                          onConfirm={() => void removeProject(project.id)}
+                        >
+                          <Button
+                            size="small"
+                            type="text"
+                            danger
+                            icon={<DeleteOutlined />}
+                            disabled={busy}
+                            className="!rounded-md"
+                          />
+                        </Popconfirm>
+                      </div>
+                    </div>
+
+                    <div className="mb-3 font-mono text-xs text-slate-500 bg-slate-50 rounded px-2.5 py-1.5 border border-slate-100 flex items-center justify-between gap-2 overflow-hidden">
+                      <span className="truncate">{project.rootPath}</span>
+                      <Typography.Text copyable={{ text: project.rootPath }} className="shrink-0" />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-400">
+                      <span>Cập nhật: {dayjs(project.updatedAt).format('DD/MM/YYYY HH:mm')}</span>
+                      <Button
+                        type={isActive ? 'primary' : 'default'}
+                        size="small"
+                        icon={<FolderOpenOutlined />}
+                        disabled={busy}
+                        onClick={() => void openProject(project.id)}
+                        className="!rounded-md font-medium"
+                      >
+                        {isActive ? 'Đang mở' : 'Mở dự án'}
+                      </Button>
+                    </div>
+                  </div>
+                </List.Item>
+              )
+            }}
           />
         )}
       </Card>
+
       <Modal
         title="Tạo dự án mới"
         open={createOpen}
-        okText="Tạo"
+        okText="Tạo dự án"
         cancelText="Hủy"
         confirmLoading={busy}
         onOk={() => void submitCreateProject()}
@@ -212,18 +240,19 @@ export default function ProjectPage({ onOpenProject }: ProjectPageProps) {
           setCreateOpen(false)
           setNewProjectName('')
         }}
+        className="!rounded-lg"
       >
-        <Typography.Text strong>Tên dự án</Typography.Text>
+        <Typography.Text strong className="text-slate-700">Tên dự án</Typography.Text>
         <Input
-          className="mt-2"
+          className="mt-2 !rounded-md"
           autoFocus
-          placeholder="Ví dụ: Dự án review sản phẩm 01"
+          placeholder="Ví dụ: Review sản phẩm 01"
           value={newProjectName}
           onChange={(event) => setNewProjectName(event.target.value)}
           onPressEnter={() => void submitCreateProject()}
         />
         <Typography.Text className="mt-2 block text-xs" type="secondary">
-          Sau khi tạo, vào Video Builder của dự án để chọn folder nguồn.
+          Sau khi tạo, hệ thống sẽ tự động chuyển sang trang Video Builder để cấu hình nguồn dữ liệu.
         </Typography.Text>
       </Modal>
     </main>
