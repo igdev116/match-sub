@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Alert, Button, Empty, Input, Modal, Table, Tag, Tooltip, Typography } from 'antd'
+import { Button, Empty, Input, Modal, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
   AppstoreOutlined,
@@ -76,6 +76,20 @@ const motionLabels: Record<BuildConfig['motionEffect'], string> = {
   'alternate-top-corners': 'Xen kẽ góc trên',
   'alternate-top-corners-reverse': 'Xen kẽ góc trên (ngược)',
   'alternate-corner-in-out': 'Luân phiên 4 góc vào/ra',
+}
+
+function warningActionText(warnings: string[]): string {
+  const combined = warnings.join(' ').toLowerCase()
+  if (combined.includes('timeline')) {
+    return 'Cách xử lý: vào Ghép audio và ghép lại để app tạo file timeline, hoặc chọn thủ công file .timeline.json ở ô Timeline audio.'
+  }
+  if (combined.includes('ảnh') || combined.includes('image')) {
+    return 'Cách xử lý: kiểm tra thư mục ảnh, bấm Làm mới ở Nguồn dữ liệu, rồi mở preview lại.'
+  }
+  if (combined.includes('srt') || combined.includes('subtitle') || combined.includes('phụ đề')) {
+    return 'Cách xử lý: kiểm tra file SRT đang chọn, đảm bảo đúng nội dung/audio của project, rồi mở preview lại.'
+  }
+  return 'Cách xử lý: kiểm tra lại các file nguồn trong Nguồn dữ liệu, bấm Làm mới, rồi preview lại.'
 }
 
 export default function AlignmentPreview({
@@ -205,6 +219,16 @@ export default function AlignmentPreview({
             <Tag color="default" className="!mr-0 text-xs text-slate-600">
               {item.srtEntries.length} câu phụ đề
             </Tag>
+            {item.timingSource === 'timeline' && (
+              <>
+                <Tag color="cyan" className="!mr-0 text-xs">
+                  Audio: {(item.audioDurationSeconds ?? 0).toFixed(3)}s
+                </Tag>
+                <Tag color="blue" className="!mr-0 text-xs">
+                  Nghỉ cuối: {(item.pauseAfterSeconds ?? 0).toFixed(3)}s
+                </Tag>
+              </>
+            )}
           </div>
         </div>
       ),
@@ -320,6 +344,7 @@ export default function AlignmentPreview({
 
   return (
     <Modal
+      rootClassName="alignment-preview-modal-root"
       className="alignment-preview-modal"
       title={
         <div className="flex items-center gap-2.5">
@@ -333,12 +358,38 @@ export default function AlignmentPreview({
       onCancel={onClose}
       footer={null}
       width="min(1240px, calc(100vw - 48px))"
-      style={{ top: 16 }}
+      centered
+      style={{ paddingBottom: 0 }}
+      styles={{
+        container: {
+          height: 'calc(100vh - 48px)',
+          maxHeight: 'calc(100vh - 48px)',
+        },
+        root: {
+          height: '100vh',
+        },
+        body: {
+          display: 'flex',
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
+        },
+      }}
+      classNames={{
+        container: 'alignment-preview-modal-container',
+        body: 'alignment-preview-modal-body',
+      }}
+      modalRender={(modal) => (
+        <div className="alignment-preview-modal-frame">
+          {modal}
+        </div>
+      )}
       destroyOnHidden
     >
-      <div className="space-y-4 pt-1">
-        {/* Visual Summary Metric Cards */}
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+      <div className="alignment-preview-content pt-1">
+        <div className="alignment-preview-header space-y-4">
+          {/* Visual Summary Metric Cards */}
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
           <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-md">
             <span className="text-xs text-slate-500 block mb-0.5">Tổng số cảnh (Scenes)</span>
             <span className="text-base font-bold text-slate-800 font-mono">{items.length} scenes</span>
@@ -346,6 +397,11 @@ export default function AlignmentPreview({
           <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-md">
             <span className="text-xs text-slate-500 block mb-0.5">Thời lượng tổng dự kiến</span>
             <span className="text-base font-bold text-brand-600 font-mono">{formatTime(totalDurationSeconds)}</span>
+            <span className="mt-0.5 block text-[11px] font-medium text-slate-500">
+              {items[0]?.timingSource === 'timeline'
+                ? 'Nguồn: Timeline audio chính xác'
+                : 'Nguồn: SRT fallback'}
+            </span>
           </div>
           <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-md">
             <span className="text-xs text-slate-500 block mb-0.5">Chuỗi Zoom Camera</span>
@@ -363,54 +419,52 @@ export default function AlignmentPreview({
                   : `${motionHoldPercent}% cuối scene`}
             </span>
           </div>
-        </div>
-
-        {/* Search & Warnings Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-md border border-slate-200">
-          <div className="flex items-center gap-2 flex-1 min-w-[280px]">
-            <Input
-              prefix={<SearchOutlined className="text-slate-400" />}
-              placeholder="Tìm theo mã Scene (#001), tên ảnh, hoặc từ khóa phụ đề..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              allowClear
-              className="!rounded-md text-xs"
-            />
           </div>
 
-          <div className="text-xs text-slate-500 font-medium">
-            Hiển thị <span className="text-brand-600 font-bold">{filteredItems.length}</span> / {items.length} cảnh
-          </div>
-        </div>
+          {/* Search & Warnings Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-md border border-slate-200">
+            <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+              <Input
+                prefix={<SearchOutlined className="text-slate-400" />}
+                placeholder="Tìm theo mã Scene (#001), tên ảnh, hoặc từ khóa phụ đề..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                allowClear
+                className="!rounded-md text-xs"
+              />
+            </div>
 
-        {/* Warning Callouts */}
-        {warnings.length > 0 && (
-          <Alert
-            className="!rounded-md border-amber-200 bg-amber-50"
-            type="warning"
-            showIcon
-            message={<span className="font-semibold text-amber-900 text-xs">Cảnh báo Alignment dữ liệu</span>}
-            description={
-              <ul className="m-0 pl-4 text-xs text-amber-800 space-y-1">
-                {warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            }
-          />
-        )}
+            <div className="text-xs text-slate-500 font-medium">
+              Hiển thị <span className="text-brand-600 font-bold">{filteredItems.length}</span> / {items.length} cảnh
+            </div>
+          </div>
+
+          {/* Warning Callouts */}
+          {warnings.length > 0 && (
+            <div className="alignment-preview-warning">
+              <InfoCircleOutlined className="alignment-preview-warning-icon" />
+              <div className="min-w-0">
+                <div className="alignment-preview-warning-title">Cảnh báo Alignment dữ liệu</div>
+                <div className="alignment-preview-warning-text">{warnings.join(' ')}</div>
+                <div className="alignment-preview-warning-action">{warningActionText(warnings)}</div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Scenes Table */}
-        <Table
-          className="alignment-preview-table rounded-md border border-slate-200 overflow-hidden"
-          rowKey="sceneNumber"
-          columns={columns}
-          dataSource={filteredItems}
-          loading={loading}
-          pagination={{ pageSize: 10, showSizeChanger: false }}
-          locale={{ emptyText: <Empty description="Không tìm thấy scene phù hợp" /> }}
-          scroll={{ y: 'max(320px, calc(100vh - 430px))' }}
-        />
+        <div className="alignment-preview-table-scroll">
+          <Table
+            className="alignment-preview-table rounded-md border border-slate-200 overflow-hidden"
+            rowKey="sceneNumber"
+            columns={columns}
+            dataSource={filteredItems}
+            loading={loading}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
+            scroll={{ y: 'calc(100vh - 560px)' }}
+            locale={{ emptyText: <Empty description="Không tìm thấy scene phù hợp" /> }}
+          />
+        </div>
       </div>
 
       {scenePreview && (

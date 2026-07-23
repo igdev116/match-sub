@@ -20,6 +20,7 @@ export default function BuildPage() {
             imagesDirectory={state.imagesDirectory}
             sceneListPath={state.sceneListPath}
             srtPath={state.srtPath}
+            timelinePath={state.timelinePath}
             outputDisplayPath={state.outputDisplayPath}
             sourceFolder={state.sourceFolder}
             sourceInfos={state.sourceInfos}
@@ -29,6 +30,8 @@ export default function BuildPage() {
             busy={state.busy}
             setSceneListPath={state.setSceneListPath}
             setSrtPath={state.setSrtPath}
+            setTimelinePath={state.setTimelinePath}
+            clearTimeline={state.clearTimeline}
             chooseDirectory={state.chooseDirectory}
             chooseFile={state.chooseFile}
             chooseOutput={state.chooseOutput}

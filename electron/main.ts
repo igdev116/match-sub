@@ -15,6 +15,7 @@ import {
 } from './ffmpeg'
 import { parseSrt } from './srt-parser'
 import type {
+  AudioTimeline,
   AudioMergeConfig,
   AudioMergeProgress,
   AudioFileItem,
@@ -69,7 +70,7 @@ const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp'])
 const thumbnailCache = new Map<string, string>()
 const pendingThumbnails = new Map<string, Promise<string>>()
 const thumbnailCacheLimit = 300
-const thumbnailConcurrency = 3
+const thumbnailConcurrency = 2
 let activeThumbnailTasks = 0
 const thumbnailQueue: Array<{
   filePath: string
@@ -194,11 +195,13 @@ function inspectSourceFolder(folderPath: string): SourceFolderInspection {
       imagesDirectory: '',
       sceneListPath: '',
       srtPath: '',
+      timelinePath: '',
       outputPath,
       infos: {
         imagesDirectory: pathInfo(''),
         sceneListPath: pathInfo(''),
         srtPath: pathInfo(''),
+        timelinePath: pathInfo(''),
         outputPath: pathInfo(outputPath),
       },
       errors,
@@ -243,6 +246,12 @@ function inspectSourceFolder(folderPath: string): SourceFolderInspection {
     files.find((filePath) => path.extname(filePath).toLowerCase() === '.srt') ||
     ''
 
+  const exactTimeline = firstExistingPath([path.join(folderPath, 'merged-audio.timeline.json')])
+  const timelinePath =
+    exactTimeline ||
+    files.find((filePath) => filePath.toLowerCase().endsWith('.timeline.json')) ||
+    ''
+
   const outputPath = path.join(folderPath, 'output.mp4')
   const outputParentInfo = pathInfo(path.dirname(outputPath))
 
@@ -258,11 +267,13 @@ function inspectSourceFolder(folderPath: string): SourceFolderInspection {
     imagesDirectory,
     sceneListPath,
     srtPath,
+    timelinePath,
     outputPath,
     infos: {
       imagesDirectory: pathInfo(imagesDirectory),
       sceneListPath: pathInfo(sceneListPath),
       srtPath: pathInfo(srtPath),
+      timelinePath: pathInfo(timelinePath),
       outputPath: pathInfo(outputPath),
     },
     errors,
@@ -286,6 +297,7 @@ function defaultVideoSettings(
     srtPath: emptySource
       ? ''
       : inspection?.srtPath || existingPath(path.join(rootPath, 'sub.srt')),
+    timelinePath: emptySource ? '' : inspection?.timelinePath || '',
     outputPath: inspection?.outputPath || path.join(rootPath, 'output.mp4'),
     sampleImagePath: existingPath(preferences.get('sampleImagePath')),
     sampleVideoPath: path.join(rootPath, 'motion-preview.mp4'),
@@ -409,6 +421,7 @@ function getProjectState(): ProjectState {
       project.videoShuffleSettings &&
       Number.isFinite(project.videoShuffleSettings.shortVideoThresholdSeconds) &&
       Number.isFinite(project.videoSettings.motionZoomOutStartPercent) &&
+      typeof project.videoSettings.timelinePath === 'string' &&
       typeof project.videoSettings.motionEnabled === 'boolean' &&
       Array.isArray(project.videoSettings.motionSequence) &&
       project.videoSettings.motionSequence.length > 0
@@ -431,6 +444,7 @@ function getProjectState(): ProjectState {
       },
       videoSettings: {
         ...project.videoSettings,
+        timelinePath: project.videoSettings.timelinePath ?? '',
         motionEnabled: project.videoSettings.motionEnabled ?? true,
         motionZoomOutStartPercent: project.videoSettings.motionZoomOutStartPercent ?? 12,
         motionSequence:
@@ -518,6 +532,82 @@ async function getAudioDurationSeconds(filePath: string): Promise<number | null>
   } catch {
     return null
   }
+}
+
+function roundTimelineSeconds(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000
+}
+
+function timelinePathForAudio(outputPath: string): string {
+  const extension = path.extname(outputPath)
+  const basePath = extension ? outputPath.slice(0, -extension.length) : outputPath
+  return `${basePath}.timeline.json`
+}
+
+async function createAudioTimeline(config: AudioMergeConfig): Promise<{
+  timeline: AudioTimeline
+  timelinePath: string
+}> {
+  const sourceDurations: Array<number | null> = Array(config.files.length).fill(null)
+  let nextDurationIndex = 0
+  async function probeNextDuration(): Promise<void> {
+    while (nextDurationIndex < config.files.length) {
+      const index = nextDurationIndex
+      nextDurationIndex += 1
+      sourceDurations[index] = await getAudioDurationSeconds(config.files[index])
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(4, config.files.length) }, () => probeNextDuration()),
+  )
+  const invalidIndex = sourceDurations.findIndex(
+    (duration) => duration === null || !Number.isFinite(duration) || duration <= 0,
+  )
+  if (invalidIndex >= 0) {
+    throw new Error(`Không đọc được thời lượng audio: ${path.basename(config.files[invalidIndex])}.`)
+  }
+
+  let cursor = 0
+  const items = config.files.map((filePath, index) => {
+    const audioDurationSeconds = sourceDurations[index] as number
+    const pauseAfterSeconds = index < config.files.length - 1 ? config.pauseSeconds : 0
+    const startSeconds = cursor
+    const endSeconds = startSeconds + audioDurationSeconds + pauseAfterSeconds
+    cursor = endSeconds
+    return {
+      sceneNumber: index + 1,
+      sourceName: path.basename(filePath),
+      startSeconds: roundTimelineSeconds(startSeconds),
+      audioDurationSeconds: roundTimelineSeconds(audioDurationSeconds),
+      pauseAfterSeconds: roundTimelineSeconds(pauseAfterSeconds),
+      endSeconds: roundTimelineSeconds(endSeconds),
+    }
+  })
+
+  const mergedDuration = await getAudioDurationSeconds(config.outputPath)
+  const totalDurationSeconds = mergedDuration ?? cursor
+  if (Math.abs(totalDurationSeconds - cursor) > 1) {
+    throw new Error(
+      `Merged audio lệch ${(totalDurationSeconds - cursor).toFixed(3)} giây so với timeline nguồn.`,
+    )
+  }
+  const lastItem = items.at(-1)
+  if (!lastItem || totalDurationSeconds <= lastItem.startSeconds) {
+    throw new Error('Thời lượng merged audio không hợp lệ để tạo timeline.')
+  }
+  lastItem.endSeconds = roundTimelineSeconds(totalDurationSeconds)
+
+  const timeline: AudioTimeline = {
+    version: 1,
+    createdAt: nowIso(),
+    audioOutputPath: config.outputPath,
+    pauseSeconds: roundTimelineSeconds(config.pauseSeconds),
+    totalDurationSeconds: roundTimelineSeconds(totalDurationSeconds),
+    items,
+  }
+  const timelinePath = timelinePathForAudio(config.outputPath)
+  fs.writeFileSync(timelinePath, `${JSON.stringify(timeline, null, 2)}\n`, 'utf8')
+  return { timeline, timelinePath }
 }
 
 async function getMediaDurationSeconds(filePath: string): Promise<number | null> {
@@ -745,7 +835,7 @@ async function createThumbnail(filePath: string): Promise<string> {
       .rotate()
       .resize(320, 180, {
         fit: 'cover',
-        position: 'attention',
+        position: 'centre',
         withoutEnlargement: true,
       })
       .webp({ quality: 72, effort: 2 })
@@ -809,6 +899,10 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+
+  // Open in the maximized desktop workspace by default without entering
+  // native fullscreen/kiosk mode, so the window controls remain available.
+  mainWindow.maximize()
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -1195,6 +1289,7 @@ app.whenReady().then(() => {
         ...progress,
       } satisfies AudioMergeProgress)
     }
+    let timelinePath: string | undefined
     try {
       sendProgress({
         phase: 'merging',
@@ -1204,6 +1299,15 @@ app.whenReady().then(() => {
         srtOutputPath: config.createSrt ? config.srtOutputPath : undefined,
       })
       await mergeAudio(config)
+      const timelineResult = await createAudioTimeline(config)
+      timelinePath = timelineResult.timelinePath
+      updateProject(config.projectId, (project) => ({
+        ...project,
+        videoSettings: {
+          ...project.videoSettings,
+          timelinePath: timelineResult.timelinePath,
+        },
+      }))
       if (config.createSrt) {
         await transcribeToSrt(config, (progress) => {
           if (progress.percent >= 100) return
@@ -1213,6 +1317,7 @@ app.whenReady().then(() => {
             message: progress.message,
             outputPath: config.outputPath,
             srtOutputPath: config.srtOutputPath,
+            timelinePath,
           })
         })
       }
@@ -1222,6 +1327,7 @@ app.whenReady().then(() => {
         message: config.createSrt ? 'Đã ghép audio và xuất SRT.' : 'Đã ghép audio.',
         outputPath: config.outputPath,
         srtOutputPath: config.createSrt ? config.srtOutputPath : undefined,
+        timelinePath,
       })
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
@@ -1231,6 +1337,7 @@ app.whenReady().then(() => {
         message: 'Ghép audio thất bại.',
         outputPath: config.outputPath,
         srtOutputPath: config.createSrt ? config.srtOutputPath : undefined,
+        timelinePath,
         error: errorMessage,
       })
       throw error

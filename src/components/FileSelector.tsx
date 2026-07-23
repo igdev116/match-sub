@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Button, Input, Tooltip, Typography } from 'antd'
-import { CheckCircleFilled, ExclamationCircleFilled, EyeOutlined, FolderOpenOutlined, InfoCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons'
+import { CheckCircleFilled, CloseOutlined, ExclamationCircleFilled, EyeOutlined, FolderOpenOutlined, InfoCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 
 interface FileSelectorProps {
   label: string
@@ -10,6 +10,7 @@ interface FileSelectorProps {
   buttonLabel: string
   onSelect: () => void
   onPreview?: () => void
+  onClear?: () => void
   disabled?: boolean
   status?: 'error' | 'warning'
   error?: string
@@ -26,6 +27,7 @@ export default function FileSelector({
   buttonLabel,
   onSelect,
   onPreview,
+  onClear,
   disabled,
   status,
   error,
@@ -83,6 +85,15 @@ export default function FileSelector({
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        {onClear && value && (
+          <Button
+            icon={<CloseOutlined />}
+            onClick={onClear}
+            disabled={disabled}
+            title={`Bỏ ${label}`}
+            className="!rounded-md"
+          />
+        )}
         {onPreview && (
           <Button
             icon={<EyeOutlined />}
@@ -104,4 +115,3 @@ export default function FileSelector({
     </div>
   )
 }
-

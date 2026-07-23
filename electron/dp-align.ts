@@ -74,6 +74,36 @@ export function similarity(voText: string, srtTexts: string[]): number {
   return (2 * matchingCharacters(vo, srt)) / (vo.length + srt.length)
 }
 
+interface BigramProfile {
+  counts: Map<string, number>
+  size: number
+}
+
+function createBigramProfile(value: string): BigramProfile {
+  const counts = new Map<string, number>()
+  if (value.length < 2) {
+    if (value) counts.set(value, 1)
+    return { counts, size: value ? 1 : 0 }
+  }
+
+  for (let index = 0; index < value.length - 1; index += 1) {
+    const bigram = value.slice(index, index + 2)
+    counts.set(bigram, (counts.get(bigram) ?? 0) + 1)
+  }
+  return { counts, size: value.length - 1 }
+}
+
+function fastSimilarity(a: BigramProfile, b: BigramProfile): number {
+  if (a.size === 0 || b.size === 0) return 0
+  const smaller = a.counts.size <= b.counts.size ? a : b
+  const larger = smaller === a ? b : a
+  let overlap = 0
+  for (const [bigram, count] of smaller.counts) {
+    overlap += Math.min(count, larger.counts.get(bigram) ?? 0)
+  }
+  return (2 * overlap) / (a.size + b.size)
+}
+
 export function alignScenesToSrt(
   voTexts: string[],
   srtEntries: SrtEntry[],
@@ -99,20 +129,37 @@ export function alignScenesToSrt(
   )
   dp[0][0] = 0
 
+  // Candidate groups are reused for every scene. Precomputing these lightweight
+  // profiles avoids running the expensive exact matcher tens of thousands of
+  // times on the Electron main thread. Exact scores are still calculated for
+  // the final assignments below.
+  const normalizedScenes = voTexts.map((text) => normalize(text))
+  const normalizedEntries = srtEntries.map((entry) => normalize(entry.text))
+  const sceneProfiles = normalizedScenes.map(createBigramProfile)
+  const candidateProfiles = new Map<string, BigramProfile>()
+
+  function candidateProfile(start: number, end: number): BigramProfile {
+    const key = `${start}:${end}`
+    const cached = candidateProfiles.get(key)
+    if (cached) return cached
+    const profile = createBigramProfile(normalizedEntries.slice(start, end).join(' '))
+    candidateProfiles.set(key, profile)
+    return profile
+  }
+
   for (let i = 1; i <= sceneCount; i += 1) {
-    const minJ = i
-    const maxJ = srtCount - (sceneCount - i)
+    const remainingScenes = sceneCount - i
+    const minJ = Math.max(i, srtCount - remainingScenes * maxPerScene)
+    const maxJ = Math.min(i * maxPerScene, srtCount - remainingScenes)
     for (let j = minJ; j <= maxJ; j += 1) {
       const maxK = Math.min(maxPerScene, j - (i - 1))
       for (let k = 1; k <= maxK; k += 1) {
         const previousJ = j - k
         if (!Number.isFinite(dp[i - 1][previousJ])) continue
-        const score =
-          dp[i - 1][previousJ] +
-          similarity(
-            voTexts[i - 1],
-            srtEntries.slice(previousJ, j).map((entry) => entry.text),
-          )
+        const score = dp[i - 1][previousJ] + fastSimilarity(
+          sceneProfiles[i - 1],
+          candidateProfile(previousJ, j),
+        )
         if (score > dp[i][j]) {
           dp[i][j] = score
           backtrack[i][j] = k

@@ -39,17 +39,20 @@ export interface SourceFolderInspection {
   imagesDirectory: string
   sceneListPath: string
   srtPath: string
+  timelinePath: string
   outputPath: string
   infos: {
     imagesDirectory: PathInfo
     sceneListPath: PathInfo
     srtPath: PathInfo
+    timelinePath: PathInfo
     outputPath: PathInfo
   }
   errors: {
     imagesDirectory?: string
     sceneListPath?: string
     srtPath?: string
+    timelinePath?: string
     outputPath?: string
   }
 }
@@ -59,6 +62,7 @@ export interface ProjectVideoSettings {
   imagesDirectory: string
   sceneListPath: string
   srtPath: string
+  timelinePath: string
   outputPath: string
   sampleImagePath: string
   sampleVideoPath: string
@@ -122,6 +126,9 @@ export interface AlignmentItem {
   startSeconds: number
   duration: number
   srtEntries: SrtEntry[]
+  timingSource: 'timeline' | 'srt'
+  audioDurationSeconds?: number
+  pauseAfterSeconds?: number
 }
 
 export interface AlignmentPreviewResult {
@@ -133,6 +140,25 @@ export interface PreviewConfig {
   imagesDirectory: string
   sceneListPath: string
   srtPath: string
+  timelinePath?: string
+}
+
+export interface AudioTimelineItem {
+  sceneNumber: number
+  sourceName: string
+  startSeconds: number
+  audioDurationSeconds: number
+  pauseAfterSeconds: number
+  endSeconds: number
+}
+
+export interface AudioTimeline {
+  version: 1
+  createdAt: string
+  audioOutputPath: string
+  pauseSeconds: number
+  totalDurationSeconds: number
+  items: AudioTimelineItem[]
 }
 
 export interface MotionSequenceItem {
@@ -228,6 +254,7 @@ export interface AudioMergeProgress {
   message: string
   outputPath?: string
   srtOutputPath?: string
+  timelinePath?: string
   error?: string
 }
 

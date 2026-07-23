@@ -8,6 +8,7 @@ import {
 import {
   FileExcelOutlined,
   FileTextOutlined,
+  FieldTimeOutlined,
   FolderOpenOutlined,
   InfoCircleOutlined,
   QuestionCircleOutlined,
@@ -23,6 +24,7 @@ interface SourceDataCardProps {
   imagesDirectory: string
   sceneListPath: string
   srtPath: string
+  timelinePath: string
   outputDisplayPath: string
   sourceFolder: string
   sourceInfos: Record<SourceKey, PathInfo>
@@ -32,6 +34,8 @@ interface SourceDataCardProps {
   busy: boolean
   setSceneListPath: (path: string) => void
   setSrtPath: (path: string) => void
+  setTimelinePath: (path: string) => void
+  clearTimeline: () => void
   chooseDirectory: () => void
   chooseFile: (extensions: string[], setter: (path: string) => void, key: SourceKey) => void
   chooseOutput: () => void
@@ -44,6 +48,7 @@ export default function SourceDataCard({
   imagesDirectory,
   sceneListPath,
   srtPath,
+  timelinePath,
   outputDisplayPath,
   sourceFolder,
   sourceInfos,
@@ -53,6 +58,8 @@ export default function SourceDataCard({
   busy,
   setSceneListPath,
   setSrtPath,
+  setTimelinePath,
+  clearTimeline,
   chooseDirectory,
   chooseFile,
   chooseOutput,
@@ -155,6 +162,25 @@ export default function SourceDataCard({
           error={sourceErrors.srtPath}
           metaText={formatPathMeta(sourceInfos.srtPath)}
           tooltipTitle="File phụ đề chuẩn (.srt) chứa các mốc thời gian hiển thị câu thoại chi tiết."
+        />
+        <FileSelector
+          label="Timeline audio"
+          value={timelinePath}
+          placeholder="Tự động tạo khi ghép audio (không bắt buộc)"
+          icon={<FieldTimeOutlined className="text-cyan-600" />}
+          buttonLabel="Chọn timeline"
+          onSelect={() => chooseFile(['json'], setTimelinePath, 'timelinePath')}
+          onClear={clearTimeline}
+          disabled={busy}
+          status={sourceErrors.timelinePath ? 'error' : undefined}
+          error={sourceErrors.timelinePath}
+          helperText={
+            timelinePath
+              ? 'Duration video sẽ lấy chính xác từ từng audio nguồn; SRT chỉ dùng cho nội dung.'
+              : 'Chưa có timeline: app sẽ fallback timing theo SRT và có thể lệch khi Whisper gộp scene.'
+          }
+          metaText={formatPathMeta(sourceInfos.timelinePath)}
+          tooltipTitle="File nhỏ do app tự tạo khi ghép audio, lưu ranh giới chính xác của từng scene."
         />
         <FileSelector
           label={mode === 'clips' ? 'Thư mục lưu clips' : 'Output video'}

@@ -608,6 +608,7 @@ export async function buildSampleVideo(config: SampleBuildConfig): Promise<strin
     startSeconds: 0,
     duration: 10,
     srtEntries: [],
+    timingSource: 'srt',
   }
   await run(
     ffmpegExecutable(),

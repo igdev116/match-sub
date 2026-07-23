@@ -1,43 +1,92 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { alignScenesToSrt } from './dp-align'
-import { parseSrt, timeToSeconds } from './srt-parser'
+import { readAudioTimeline } from './audio-timeline'
+import { parseSrt, secondsToSrtTime, timeToSeconds } from './srt-parser'
 import type { AlignmentItem, AlignmentPreviewResult, PreviewConfig, Scene, SrtEntry } from './types'
 import { readScenes } from './xlsx-reader'
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp'])
 
-export function findImage(directory: string, sceneNumber: number): string | null {
-  if (!fs.existsSync(directory)) return null
-  const candidates = fs
+function indexImagesByScene(directory: string): Map<number, string> {
+  const imagesByScene = new Map<number, string>()
+  if (!fs.existsSync(directory)) return imagesByScene
+
+  const names = fs
     .readdirSync(directory)
-    .filter((name) => {
-      const extension = path.extname(name).toLowerCase()
-      const match = path.basename(name, extension).match(/^(\d+)/)
-      return IMAGE_EXTENSIONS.has(extension) && Number(match?.[1]) === sceneNumber
-    })
+    .filter((name) => IMAGE_EXTENSIONS.has(path.extname(name).toLowerCase()))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-  return candidates[0] ? path.join(directory, candidates[0]) : null
+
+  for (const name of names) {
+    const extension = path.extname(name)
+    const match = path.basename(name, extension).match(/^(\d+)/)
+    const sceneNumber = match ? Number(match[1]) : Number.NaN
+    if (Number.isFinite(sceneNumber) && !imagesByScene.has(sceneNumber)) {
+      imagesByScene.set(sceneNumber, path.join(directory, name))
+    }
+  }
+
+  return imagesByScene
 }
 
-function listImageSceneNumbers(directory: string): number[] {
-  if (!fs.existsSync(directory)) return []
-  return fs
-    .readdirSync(directory)
-    .map((name) => {
-      if (!IMAGE_EXTENSIONS.has(path.extname(name).toLowerCase())) return null
-      const match = path.basename(name, path.extname(name)).match(/^(\d+)/)
-      return match ? Number(match[1]) : null
-    })
-    .filter((sceneNumber): sceneNumber is number => Number.isFinite(sceneNumber))
+export function findImage(directory: string, sceneNumber: number): string | null {
+  return indexImagesByScene(directory).get(sceneNumber) ?? null
 }
 
 function createAlignmentItems(
   scenes: Scene[],
   srtEntries: SrtEntry[],
   config: PreviewConfig,
+  imagesByScene = indexImagesByScene(config.imagesDirectory),
 ): AlignmentItem[] {
   if (srtEntries.length === 0) throw new Error('Không đọc được entry nào từ file SRT.')
+
+  if (config.timelinePath?.trim()) {
+    const timeline = readAudioTimeline(config.timelinePath, scenes)
+    const entriesByScene = scenes.map(() => [] as SrtEntry[])
+    for (const entry of srtEntries) {
+      const entryStart = timeToSeconds(entry.start)
+      const entryEnd = timeToSeconds(entry.end)
+      let bestSceneIndex = 0
+      let bestOverlap = Number.NEGATIVE_INFINITY
+      let bestDistance = Number.POSITIVE_INFINITY
+      const entryMidpoint = (entryStart + entryEnd) / 2
+      timeline.items.forEach((item, index) => {
+        const overlap = Math.max(
+          0,
+          Math.min(entryEnd, item.endSeconds) - Math.max(entryStart, item.startSeconds),
+        )
+        const distance =
+          entryMidpoint < item.startSeconds
+            ? item.startSeconds - entryMidpoint
+            : entryMidpoint > item.endSeconds
+              ? entryMidpoint - item.endSeconds
+              : 0
+        if (overlap > bestOverlap || (overlap === bestOverlap && distance < bestDistance)) {
+          bestOverlap = overlap
+          bestDistance = distance
+          bestSceneIndex = index
+        }
+      })
+      entriesByScene[bestSceneIndex].push(entry)
+    }
+
+    return scenes.map((scene, index) => {
+      const timelineItem = timeline.items[index]
+      return {
+        sceneNumber: scene.number,
+        sceneContent: scene.content,
+        imagePath: imagesByScene.get(scene.number) ?? null,
+        start: secondsToSrtTime(timelineItem.startSeconds),
+        startSeconds: timelineItem.startSeconds,
+        duration: timelineItem.endSeconds - timelineItem.startSeconds,
+        srtEntries: entriesByScene[index],
+        timingSource: 'timeline',
+        audioDurationSeconds: timelineItem.audioDurationSeconds,
+        pauseAfterSeconds: timelineItem.pauseAfterSeconds,
+      }
+    })
+  }
 
   const assignments = alignScenesToSrt(
     scenes.map((scene) => scene.content),
@@ -56,11 +105,12 @@ function createAlignmentItems(
     return {
       sceneNumber: scene.number,
       sceneContent: scene.content,
-      imagePath: findImage(config.imagesDirectory, scene.number),
+      imagePath: imagesByScene.get(scene.number) ?? null,
       start: entries[0].start,
       startSeconds,
       duration: Math.max(0.04, endSeconds - startSeconds),
       srtEntries: entries,
+      timingSource: 'srt',
     }
   })
 }
@@ -73,18 +123,27 @@ function compactSceneList(sceneNumbers: number[]): string {
 export function createAlignment(config: PreviewConfig): AlignmentItem[] {
   const scenes = readScenes(config.sceneListPath)
   const srtEntries = parseSrt(config.srtPath)
-  return createAlignmentItems(scenes, srtEntries, config)
+  const imagesByScene = indexImagesByScene(config.imagesDirectory)
+  return createAlignmentItems(scenes, srtEntries, config, imagesByScene)
 }
 
 export function previewAlignment(config: PreviewConfig): AlignmentPreviewResult {
   const scenes = readScenes(config.sceneListPath)
   const srtEntries = parseSrt(config.srtPath)
-  const items = createAlignmentItems(scenes, srtEntries, config)
-  const assignments = alignScenesToSrt(
-    scenes.map((scene) => scene.content),
-    srtEntries,
-  )
+  const imagesByScene = indexImagesByScene(config.imagesDirectory)
+  const items = createAlignmentItems(scenes, srtEntries, config, imagesByScene)
+  const assignments = config.timelinePath?.trim()
+    ? []
+    : alignScenesToSrt(
+        scenes.map((scene) => scene.content),
+        srtEntries,
+      )
   const warnings: string[] = []
+  if (!config.timelinePath?.trim()) {
+    warnings.push(
+      'Chưa có Timeline audio; duration đang fallback theo ranh giới SRT và có thể lệch khi Whisper gộp hai scene.',
+    )
+  }
   const missingImageScenes = items
     .filter((item) => !item.imagePath)
     .map((item) => item.sceneNumber)
@@ -95,7 +154,7 @@ export function previewAlignment(config: PreviewConfig): AlignmentPreviewResult 
     )
   }
 
-  const imageSceneNumbers = listImageSceneNumbers(config.imagesDirectory)
+  const imageSceneNumbers = [...imagesByScene.keys()]
   if (imageSceneNumbers.length > 0 && imageSceneNumbers.length < scenes.length) {
     warnings.push(`Thư mục ảnh có ${imageSceneNumbers.length} ảnh đánh số, ít hơn ${scenes.length} scene.`)
   }

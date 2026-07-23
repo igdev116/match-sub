@@ -28,12 +28,14 @@ export default function useBuildPage() {
   const [imagesDirectory, setImagesDirectory] = useState('')
   const [sceneListPath, setSceneListPath] = useState('')
   const [srtPath, setSrtPath] = useState('')
+  const [timelinePath, setTimelinePath] = useState('')
   const [outputPath, setOutputPath] = useState('')
   const [sourceFolder, setSourceFolder] = useState('')
   const [sourceInfos, setSourceInfos] = useState<Record<SourceKey, PathInfo>>({
     imagesDirectory: emptyPathInfo,
     sceneListPath: emptyPathInfo,
     srtPath: emptyPathInfo,
+    timelinePath: emptyPathInfo,
     outputPath: emptyPathInfo,
   })
   const [sourceErrors, setSourceErrors] = useState<Partial<Record<SourceKey, string>>>({})
@@ -122,6 +124,7 @@ export default function useBuildPage() {
     setImagesDirectory(videoSettings.imagesDirectory)
     setSceneListPath(videoSettings.sceneListPath)
     setSrtPath(videoSettings.srtPath)
+    setTimelinePath(videoSettings.timelinePath)
     setOutputPath(videoSettings.outputPath)
     setSampleImagePath(videoSettings.sampleImagePath)
     setSampleVideoPath(videoSettings.sampleVideoPath)
@@ -129,29 +132,38 @@ export default function useBuildPage() {
       window.videoBuilder.getPathInfo(videoSettings.imagesDirectory),
       window.videoBuilder.getPathInfo(videoSettings.sceneListPath),
       window.videoBuilder.getPathInfo(videoSettings.srtPath),
+      window.videoBuilder.getPathInfo(videoSettings.timelinePath),
       window.videoBuilder.getPathInfo(videoSettings.outputPath),
-    ]).then(([imagesInfo, sceneInfo, srtInfo, outputInfo]) => {
+    ]).then(([imagesInfo, sceneInfo, srtInfo, timelineInfo, outputInfo]) => {
       setSourceInfos({
         imagesDirectory: imagesInfo,
         sceneListPath: sceneInfo,
         srtPath: srtInfo,
+        timelinePath: timelineInfo,
         outputPath: outputInfo,
       })
       const nextErrors: Partial<Record<SourceKey, string>> = {}
       const imagesError = validatePath('imagesDirectory', videoSettings.imagesDirectory, imagesInfo)
       const sceneError = validatePath('sceneListPath', videoSettings.sceneListPath, sceneInfo)
       const srtError = validatePath('srtPath', videoSettings.srtPath, srtInfo)
+      const timelineError = validatePath(
+        'timelinePath',
+        videoSettings.timelinePath,
+        timelineInfo,
+      )
       if (imagesError) nextErrors.imagesDirectory = imagesError
       if (sceneError) nextErrors.sceneListPath = sceneError
       if (srtError) nextErrors.srtPath = srtError
+      if (timelineError) nextErrors.timelinePath = timelineError
       setSourceErrors(nextErrors)
     })
-  }, [activeProject?.id])
+  }, [activeProject?.id, videoSettings?.timelinePath])
 
   const inputsReady = Boolean(imagesDirectory && sceneListPath && srtPath) &&
     !sourceErrors.imagesDirectory &&
     !sourceErrors.sceneListPath &&
-    !sourceErrors.srtPath
+    !sourceErrors.srtPath &&
+    !sourceErrors.timelinePath
   const busy = building || sampleBuilding
   const canBuild =
     inputsReady &&
@@ -161,8 +173,8 @@ export default function useBuildPage() {
     !busy
   const canBuildSample = Boolean(sampleImagePath) && ffmpeg.available === true && !busy
   const previewConfig = useMemo(
-    () => ({ imagesDirectory, sceneListPath, srtPath }),
-    [imagesDirectory, sceneListPath, srtPath],
+    () => ({ imagesDirectory, sceneListPath, srtPath, timelinePath }),
+    [imagesDirectory, sceneListPath, srtPath, timelinePath],
   )
   const outputDisplayPath = mode === 'clips' ? dirname(outputPath) : outputPath
   const motionSequenceHasZoomIn = motionSequence.some((item) => hasZoomInMotion(item.effect))
@@ -171,21 +183,32 @@ export default function useBuildPage() {
 
   function applySourceInspection(
     inspection: SourceFolderInspection,
-    options: { preserveOutput?: boolean } = {},
+    options: { preserveOutput?: boolean; preserveTimeline?: boolean } = {},
   ) {
     setSourceFolder(inspection.folderPath)
     setImagesDirectory(inspection.imagesDirectory)
     setSceneListPath(inspection.sceneListPath)
     setSrtPath(inspection.srtPath)
+    if (!options.preserveTimeline || inspection.timelinePath) {
+      setTimelinePath(inspection.timelinePath)
+    }
     if (!options.preserveOutput) setOutputPath(inspection.outputPath)
     setSourceInfos((current) => ({
       ...inspection.infos,
+      timelinePath:
+        options.preserveTimeline && !inspection.timelinePath
+          ? current.timelinePath
+          : inspection.infos.timelinePath,
       outputPath: options.preserveOutput ? current.outputPath : inspection.infos.outputPath,
     }))
     setSourceErrors((current) => {
       if (!options.preserveOutput) return inspection.errors
       const next = { ...inspection.errors }
       if (current.outputPath) next.outputPath = current.outputPath
+      if (options.preserveTimeline && !inspection.timelinePath) {
+        if (current.timelinePath) next.timelinePath = current.timelinePath
+        else delete next.timelinePath
+      }
       return next
     })
   }
@@ -235,6 +258,14 @@ export default function useBuildPage() {
       if (!value) return 'Thiếu file SRT.'
       if (!info.exists || info.kind !== 'file') return 'File SRT không tồn tại.'
       if (!value.toLowerCase().endsWith('.srt')) return 'File phụ đề phải là .srt.'
+      return undefined
+    }
+    if (key === 'timelinePath') {
+      if (!value) return undefined
+      if (!info.exists || info.kind !== 'file') return 'File Timeline audio không tồn tại.'
+      if (!value.toLowerCase().endsWith('.timeline.json')) {
+        return 'Timeline audio phải là file .timeline.json.'
+      }
       return undefined
     }
     if (!value) return 'Thiếu đường dẫn output.'
@@ -295,6 +326,17 @@ export default function useBuildPage() {
     }
   }
 
+  function clearTimeline() {
+    setTimelinePath('')
+    setSourceInfos((current) => ({ ...current, timelinePath: emptyPathInfo }))
+    setSourceErrors((current) => {
+      const next = { ...current }
+      delete next.timelinePath
+      return next
+    })
+    saveVideoSettings({ timelinePath: '' })
+  }
+
   async function chooseSourceFolder() {
     setSourceInspecting(true)
     try {
@@ -306,6 +348,7 @@ export default function useBuildPage() {
         imagesDirectory: result.imagesDirectory,
         sceneListPath: result.sceneListPath,
         srtPath: result.srtPath,
+        timelinePath: result.timelinePath,
         outputPath: result.outputPath,
       })
       const missingCount = Object.keys(result.errors).length
@@ -329,12 +372,13 @@ export default function useBuildPage() {
     setSourceInspecting(true)
     try {
       const result = await window.videoBuilder.inspectSourceFolder(sourceFolder)
-      applySourceInspection(result, { preserveOutput: true })
+      applySourceInspection(result, { preserveOutput: true, preserveTimeline: true })
       saveVideoSettings({
         sourceFolderPath: result.folderPath,
         imagesDirectory: result.imagesDirectory,
         sceneListPath: result.sceneListPath,
         srtPath: result.srtPath,
+        ...(result.timelinePath ? { timelinePath: result.timelinePath } : {}),
       })
       const missingCount = Object.keys(result.errors).length
       if (missingCount > 0) {
@@ -493,6 +537,7 @@ export default function useBuildPage() {
     imagesDirectory,
     sceneListPath,
     srtPath,
+    timelinePath,
     outputPath,
     outputDisplayPath,
     sourceFolder,
@@ -506,6 +551,8 @@ export default function useBuildPage() {
     canBuildSample,
     setSceneListPath,
     setSrtPath,
+    setTimelinePath,
+    clearTimeline,
     chooseDirectory,
     chooseFile,
     chooseOutput,

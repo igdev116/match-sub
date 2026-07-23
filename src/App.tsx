@@ -25,12 +25,21 @@ function parseProjectMenuKey(key: AppMenuKey): { projectId: string; tool: AppToo
 function AudioMergeRuntimeBridge() {
   const { notification } = AntApp.useApp()
   const applyProgress = useAudioMergeStore((state) => state.applyProgress)
+  const loadProjects = useProjectStore((state) => state.loadProjects)
   const notifiedEvents = useRef(new Set<string>())
+  const refreshedTimelines = useRef(new Set<string>())
 
   useEffect(
     () =>
       window.videoBuilder.onAudioMergeProgress((progress) => {
         applyProgress(progress)
+        if (
+          progress.timelinePath &&
+          !refreshedTimelines.current.has(progress.timelinePath)
+        ) {
+          refreshedTimelines.current.add(progress.timelinePath)
+          void loadProjects()
+        }
         if (progress.phase !== 'complete' && progress.phase !== 'error') return
         const eventKey = `${progress.jobId}:${progress.phase}`
         if (notifiedEvents.current.has(eventKey)) return
@@ -49,7 +58,7 @@ function AudioMergeRuntimeBridge() {
           })
         }
       }),
-    [applyProgress, notification],
+    [applyProgress, loadProjects, notification],
   )
 
   return null

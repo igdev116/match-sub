@@ -56,7 +56,12 @@ export const MOTION_EFFECT_OPTIONS: { value: BuildConfig['motionEffect']; label:
   { value: 'none', label: 'Đứng yên' },
 ]
 
-export type SourceKey = 'imagesDirectory' | 'sceneListPath' | 'srtPath' | 'outputPath'
+export type SourceKey =
+  | 'imagesDirectory'
+  | 'sceneListPath'
+  | 'srtPath'
+  | 'timelinePath'
+  | 'outputPath'
 
 export const emptyPathInfo: PathInfo = {
   path: '',
