@@ -145,12 +145,15 @@ export default function useBuildPage() {
       const nextErrors: Partial<Record<SourceKey, string>> = {}
       const imagesError = validatePath('imagesDirectory', videoSettings.imagesDirectory, imagesInfo)
       const sceneError = validatePath('sceneListPath', videoSettings.sceneListPath, sceneInfo)
-      const srtError = validatePath('srtPath', videoSettings.srtPath, srtInfo)
       const timelineError = validatePath(
         'timelinePath',
         videoSettings.timelinePath,
         timelineInfo,
       )
+      const hasValidTimeline = Boolean(videoSettings.timelinePath) && !timelineError
+      const srtError = hasValidTimeline
+        ? undefined
+        : validatePath('srtPath', videoSettings.srtPath, srtInfo)
       if (imagesError) nextErrors.imagesDirectory = imagesError
       if (sceneError) nextErrors.sceneListPath = sceneError
       if (srtError) nextErrors.srtPath = srtError
@@ -159,11 +162,12 @@ export default function useBuildPage() {
     })
   }, [activeProject?.id, videoSettings?.timelinePath])
 
-  const inputsReady = Boolean(imagesDirectory && sceneListPath && srtPath) &&
+  const hasValidTimeline = Boolean(timelinePath) && !sourceErrors.timelinePath
+  const hasValidSrtFallback = Boolean(srtPath) && !sourceErrors.srtPath
+  const inputsReady = Boolean(imagesDirectory && sceneListPath) &&
     !sourceErrors.imagesDirectory &&
     !sourceErrors.sceneListPath &&
-    !sourceErrors.srtPath &&
-    !sourceErrors.timelinePath
+    (hasValidTimeline || hasValidSrtFallback)
   const busy = building || sampleBuilding
   const canBuild =
     inputsReady &&
@@ -255,7 +259,9 @@ export default function useBuildPage() {
       return undefined
     }
     if (key === 'srtPath') {
-      if (!value) return 'Thiếu file SRT.'
+      if (!value) {
+        return timelinePath ? undefined : 'Thiếu file SRT fallback khi chưa có Timeline audio.'
+      }
       if (!info.exists || info.kind !== 'file') return 'File SRT không tồn tại.'
       if (!value.toLowerCase().endsWith('.srt')) return 'File phụ đề phải là .srt.'
       return undefined
@@ -280,6 +286,9 @@ export default function useBuildPage() {
       const error = validatePath(key, value, info)
       if (error) next[key] = error
       else delete next[key]
+      if (key === 'timelinePath' && value && !error) {
+        delete next.srtPath
+      }
       return next
     })
   }
@@ -332,6 +341,7 @@ export default function useBuildPage() {
     setSourceErrors((current) => {
       const next = { ...current }
       delete next.timelinePath
+      if (!srtPath) next.srtPath = 'Thiếu file SRT fallback khi chưa có Timeline audio.'
       return next
     })
     saveVideoSettings({ timelinePath: '' })
@@ -445,7 +455,7 @@ export default function useBuildPage() {
 
   async function preview() {
     if (!inputsReady) {
-      message.warning('Vui lòng chọn thư mục ảnh, file Excel và file SRT.')
+      message.warning('Vui lòng chọn thư mục ảnh, file Excel và Timeline audio (hoặc SRT fallback).')
       return
     }
     setPreviewOpen(true)

@@ -139,7 +139,7 @@ export interface AlignmentPreviewResult {
 export interface PreviewConfig {
   imagesDirectory: string
   sceneListPath: string
-  srtPath: string
+  srtPath?: string
   timelinePath?: string
 }
 
@@ -241,6 +241,7 @@ export interface AudioMergeConfig {
   pauseSeconds: number
   outputPath: string
   srtOutputPath?: string
+  sceneListPath?: string
   createSrt: boolean
   language: string
   whisperThreads: number
@@ -249,7 +250,7 @@ export interface AudioMergeConfig {
 export interface AudioMergeProgress {
   jobId: string
   projectId: string
-  phase: 'merging' | 'normalizing' | 'transcribing' | 'complete' | 'error'
+  phase: 'merging' | 'normalizing' | 'transcribing' | 'subtitling' | 'complete' | 'error'
   percent: number
   message: string
   outputPath?: string

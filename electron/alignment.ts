@@ -35,44 +35,16 @@ export function findImage(directory: string, sceneNumber: number): string | null
 
 function createAlignmentItems(
   scenes: Scene[],
-  srtEntries: SrtEntry[],
+  srtEntries: SrtEntry[] | null,
   config: PreviewConfig,
   imagesByScene = indexImagesByScene(config.imagesDirectory),
 ): AlignmentItem[] {
-  if (srtEntries.length === 0) throw new Error('Không đọc được entry nào từ file SRT.')
-
   if (config.timelinePath?.trim()) {
     const timeline = readAudioTimeline(config.timelinePath, scenes)
-    const entriesByScene = scenes.map(() => [] as SrtEntry[])
-    for (const entry of srtEntries) {
-      const entryStart = timeToSeconds(entry.start)
-      const entryEnd = timeToSeconds(entry.end)
-      let bestSceneIndex = 0
-      let bestOverlap = Number.NEGATIVE_INFINITY
-      let bestDistance = Number.POSITIVE_INFINITY
-      const entryMidpoint = (entryStart + entryEnd) / 2
-      timeline.items.forEach((item, index) => {
-        const overlap = Math.max(
-          0,
-          Math.min(entryEnd, item.endSeconds) - Math.max(entryStart, item.startSeconds),
-        )
-        const distance =
-          entryMidpoint < item.startSeconds
-            ? item.startSeconds - entryMidpoint
-            : entryMidpoint > item.endSeconds
-              ? entryMidpoint - item.endSeconds
-              : 0
-        if (overlap > bestOverlap || (overlap === bestOverlap && distance < bestDistance)) {
-          bestOverlap = overlap
-          bestDistance = distance
-          bestSceneIndex = index
-        }
-      })
-      entriesByScene[bestSceneIndex].push(entry)
-    }
 
     return scenes.map((scene, index) => {
       const timelineItem = timeline.items[index]
+      const subtitleEnd = timelineItem.startSeconds + timelineItem.audioDurationSeconds
       return {
         sceneNumber: scene.number,
         sceneContent: scene.content,
@@ -80,13 +52,19 @@ function createAlignmentItems(
         start: secondsToSrtTime(timelineItem.startSeconds),
         startSeconds: timelineItem.startSeconds,
         duration: timelineItem.endSeconds - timelineItem.startSeconds,
-        srtEntries: entriesByScene[index],
+        srtEntries: [{
+          start: secondsToSrtTime(timelineItem.startSeconds),
+          end: secondsToSrtTime(subtitleEnd),
+          text: scene.content,
+        }],
         timingSource: 'timeline',
         audioDurationSeconds: timelineItem.audioDurationSeconds,
         pauseAfterSeconds: timelineItem.pauseAfterSeconds,
       }
     })
   }
+
+  if (!srtEntries?.length) throw new Error('Chưa có Timeline audio và không đọc được file SRT fallback.')
 
   const assignments = alignScenesToSrt(
     scenes.map((scene) => scene.content),
@@ -122,21 +100,29 @@ function compactSceneList(sceneNumbers: number[]): string {
 
 export function createAlignment(config: PreviewConfig): AlignmentItem[] {
   const scenes = readScenes(config.sceneListPath)
-  const srtEntries = parseSrt(config.srtPath)
   const imagesByScene = indexImagesByScene(config.imagesDirectory)
+  const srtEntries = config.timelinePath?.trim()
+    ? null
+    : config.srtPath?.trim()
+      ? parseSrt(config.srtPath)
+      : null
   return createAlignmentItems(scenes, srtEntries, config, imagesByScene)
 }
 
 export function previewAlignment(config: PreviewConfig): AlignmentPreviewResult {
   const scenes = readScenes(config.sceneListPath)
-  const srtEntries = parseSrt(config.srtPath)
   const imagesByScene = indexImagesByScene(config.imagesDirectory)
+  const srtEntries = config.timelinePath?.trim()
+    ? null
+    : config.srtPath?.trim()
+      ? parseSrt(config.srtPath)
+      : null
   const items = createAlignmentItems(scenes, srtEntries, config, imagesByScene)
   const assignments = config.timelinePath?.trim()
     ? []
     : alignScenesToSrt(
         scenes.map((scene) => scene.content),
-        srtEntries,
+        srtEntries ?? [],
       )
   const warnings: string[] = []
   if (!config.timelinePath?.trim()) {
@@ -162,13 +148,6 @@ export function previewAlignment(config: PreviewConfig): AlignmentPreviewResult 
     warnings.push(`Thư mục ảnh có ${imageSceneNumbers.length} ảnh đánh số, nhiều hơn ${scenes.length} scene.`)
   }
 
-  const emptySrtScenes = items
-    .filter((item) => item.srtEntries.length === 0)
-    .map((item) => item.sceneNumber)
-  if (emptySrtScenes.length > 0) {
-    warnings.push(`Có ${emptySrtScenes.length} scene chưa map được SRT: ${compactSceneList(emptySrtScenes)}.`)
-  }
-
   const lowConfidenceScenes = assignments
     .filter((assignment) => assignment.score < 0.18)
     .map((assignment) => scenes[assignment.sceneIndex]?.number)
@@ -179,7 +158,7 @@ export function previewAlignment(config: PreviewConfig): AlignmentPreviewResult 
     )
   }
 
-  if (srtEntries.length >= scenes.length * 3) {
+  if (srtEntries && srtEntries.length >= scenes.length * 3) {
     warnings.push(`SRT có ${srtEntries.length} entries cho ${scenes.length} scene. Hãy kiểm tra nếu timing bị chia quá nhỏ.`)
   }
 

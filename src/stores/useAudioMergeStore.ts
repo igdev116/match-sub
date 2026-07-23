@@ -33,6 +33,7 @@ const runningPhases = new Set<AudioMergeProgress['phase']>([
   'merging',
   'normalizing',
   'transcribing',
+  'subtitling',
 ])
 
 export function isAudioMergeRunning(job?: AudioMergeProgress): boolean {

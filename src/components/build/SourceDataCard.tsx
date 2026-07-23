@@ -73,7 +73,7 @@ export default function SourceDataCard({
       title={
         <div className="flex items-center gap-2">
           <span>Nguồn dữ liệu dự án</span>
-          <Tooltip title="Tự động quét và tự động nạp Thư mục ảnh, File Excel kịch bản và File phụ đề SRT chỉ với 1 thao tác chọn folder tổng.">
+          <Tooltip title="Tự động quét Thư mục ảnh, Excel kịch bản, Timeline audio và SRT fallback trong folder nguồn.">
             <QuestionCircleOutlined className="text-brand-500 cursor-help text-xs" />
           </Tooltip>
         </div>
@@ -89,7 +89,7 @@ export default function SourceDataCard({
           >
             Làm mới
           </Button>
-          <Tooltip title="Nhấp để chọn 1 thư mục chứa sẵn ảnh, file excel và srt. Hệ thống sẽ tự động nhận diện và điền đầy đủ các ô bên dưới.">
+          <Tooltip title="Chọn folder chứa ảnh, Excel và Timeline audio. SRT chỉ cần cho project cũ chưa có Timeline.">
             <Button
               type="primary"
               icon={<FolderOpenOutlined />}
@@ -109,7 +109,9 @@ export default function SourceDataCard({
           <InfoCircleOutlined className="text-blue-600 text-sm shrink-0 mt-0.5" />
           <div className="leading-relaxed">
             <strong className="font-semibold text-blue-950 block mb-0.5">Tự động nạp dữ liệu từ Folder nguồn:</strong>
-            Khi chọn một <strong>Folder nguồn</strong> tổng (bằng nút phía trên), hệ thống sẽ tự động tìm kiếm và nạp các tệp ảnh scene, file Excel kịch bản và phụ đề SRT tương ứng bên dưới mà bạn không cần chọn từng tệp thủ công.
+            Khi chọn một <strong>Folder nguồn</strong>, hệ thống tự tìm ảnh scene,
+            Excel kịch bản và Timeline audio. Nếu có Timeline, app dùng nội dung Excel
+            làm subtitle nên không cần Whisper SRT.
           </div>
         </div>
 
@@ -150,7 +152,7 @@ export default function SourceDataCard({
           tooltipTitle="File bảng tính Excel (.xlsx/.xls) quy định thứ tự hiển thị cảnh và lời thoại tương ứng."
         />
         <FileSelector
-          label="File phụ đề (SRT)"
+          label="File phụ đề (SRT fallback — không bắt buộc)"
           value={srtPath}
           placeholder="Chọn file phụ đề .srt"
           icon={<FileTextOutlined className="text-blue-500" />}
@@ -160,8 +162,13 @@ export default function SourceDataCard({
           disabled={busy}
           status={sourceErrors.srtPath ? 'error' : undefined}
           error={sourceErrors.srtPath}
+          helperText={
+            timelinePath
+              ? 'Không dùng khi có Timeline: subtitle lấy chính xác từ nội dung Excel.'
+              : 'Chỉ bắt buộc với project cũ chưa có Timeline audio.'
+          }
           metaText={formatPathMeta(sourceInfos.srtPath)}
-          tooltipTitle="File phụ đề chuẩn (.srt) chứa các mốc thời gian hiển thị câu thoại chi tiết."
+          tooltipTitle="Chỉ dùng làm nguồn timing fallback khi project chưa có Timeline audio."
         />
         <FileSelector
           label="Timeline audio"
@@ -176,7 +183,7 @@ export default function SourceDataCard({
           error={sourceErrors.timelinePath}
           helperText={
             timelinePath
-              ? 'Duration video sẽ lấy chính xác từ từng audio nguồn; SRT chỉ dùng cho nội dung.'
+              ? 'Duration lấy từ audio nguồn; subtitle lấy trực tiếp từ nội dung Excel.'
               : 'Chưa có timeline: app sẽ fallback timing theo SRT và có thể lệch khi Whisper gộp scene.'
           }
           metaText={formatPathMeta(sourceInfos.timelinePath)}

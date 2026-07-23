@@ -49,16 +49,11 @@ export default function AudioMergePage() {
       <WhisperSrtCard
         createSrt={state.createSrt}
         srtOutputPath={state.srtOutputPath}
-        language={state.language}
-        whisperThreads={state.whisperThreads}
-        whisperStatus={state.whisperStatus}
-        whisperSetupProgress={state.whisperSetupProgress}
-        whisperSetupBusy={state.whisperSetupBusy}
+        sceneListPath={state.sceneListPath}
         processing={state.processing}
         saveAudioSettings={state.saveAudioSettings}
         chooseSrtOutputPath={state.chooseSrtOutputPath}
         showSrtOutputFolder={state.showSrtOutputFolder}
-        setupWhisper={state.setupWhisper}
       />
 
       {state.job && (
@@ -115,7 +110,7 @@ export default function AudioMergePage() {
             type="primary"
             icon={<AudioOutlined />}
             loading={state.processing}
-            disabled={state.missingRequirements.length > 0 || state.whisperSetupBusy || state.mediaBusy}
+            disabled={state.missingRequirements.length > 0 || state.mediaBusy}
             onClick={state.merge}
             className="!rounded-md font-medium px-5 shadow-sm"
           >

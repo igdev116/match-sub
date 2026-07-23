@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { App } from 'antd'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
-import type { AudioFileItem, WhisperProgress, WhisperStatus } from '../../electron/types'
+import type { AudioFileItem } from '../../electron/types'
 import {
   isAudioMergeRunning,
   useAudioMergeStore,
@@ -39,25 +39,12 @@ export default function useAudioMergePage() {
   const audioDirectory = draft?.audioDirectory ?? audioSettings?.audioDirectory ?? ''
   const processing = isAudioMergeRunning(job)
   const audioOutputDirectory = audioSettings?.audioOutputDirectory ?? ''
+  const sceneListPath = activeProject?.videoSettings.sceneListPath ?? ''
   const pageSize = audioSettings?.pageSize ?? 10
   const pauseSeconds = audioSettings?.pauseSeconds ?? 1
   const createSrt = audioSettings?.createSrt ?? true
   const language = audioSettings?.language ?? 'auto'
   const whisperThreads = audioSettings?.whisperThreads ?? 4
-  const [whisperStatus, setWhisperStatus] = useState<WhisperStatus | null>(null)
-  const [whisperSetupProgress, setWhisperSetupProgress] = useState<WhisperProgress | null>(null)
-  const [whisperSetupBusy, setWhisperSetupBusy] = useState(false)
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void refreshWhisperStatus()
-    }, 300)
-    const unsubscribe = window.videoBuilder.onWhisperProgress(setWhisperSetupProgress)
-    return () => {
-      window.clearTimeout(timer)
-      unsubscribe()
-    }
-  }, [])
 
   useEffect(() => {
     if (!audioSettings) return
@@ -100,16 +87,7 @@ export default function useAudioMergePage() {
         items.length < 2 ? 'chọn ít nhất 2 file audio' : '',
         !outputPath ? 'chọn file MP3 output' : '',
         createSrt && !srtOutputPath ? 'chọn file SRT output' : '',
-        createSrt && !whisperStatus?.available
-          ? whisperStatus?.repairMessage
-            ? 'cài lại ứng dụng'
-            : 'cài whisper.cpp'
-          : '',
-        createSrt && !whisperStatus?.modelAvailable
-          ? whisperStatus?.repairMessage
-            ? 'cài lại ứng dụng'
-            : 'tải model base'
-          : '',
+        createSrt && !sceneListPath ? 'chọn file Excel kịch bản ở Video Builder' : '',
       ].filter(Boolean),
     ),
   ]
@@ -151,25 +129,6 @@ export default function useAudioMergePage() {
       cancelled = true
     }
   }, [currentPage, pageSize, pagedItems])
-
-  async function refreshWhisperStatus() {
-    setWhisperStatus(await window.videoBuilder.getWhisperStatus())
-  }
-
-  async function setupWhisper(action: 'install' | 'download') {
-    setWhisperSetupBusy(true)
-    setWhisperSetupProgress(null)
-    try {
-      if (action === 'install') await window.videoBuilder.installWhisper()
-      else await window.videoBuilder.downloadWhisperModel()
-      await refreshWhisperStatus()
-      message.success(action === 'install' ? 'Đã cài whisper.cpp.' : 'Đã tải model base.')
-    } catch (error) {
-      message.error(cleanError(error), 8)
-    } finally {
-      setWhisperSetupBusy(false)
-    }
-  }
 
   async function addFiles() {
     const paths = await window.videoBuilder.openFiles([
@@ -290,6 +249,7 @@ export default function useAudioMergePage() {
         pauseSeconds,
         outputPath,
         srtOutputPath,
+        sceneListPath,
         createSrt,
         language,
         whisperThreads,
@@ -324,18 +284,14 @@ export default function useAudioMergePage() {
     pauseCount,
     totalPause,
     createSrt,
+    sceneListPath,
     language,
     whisperThreads,
-    whisperStatus,
-    whisperSetupProgress,
-    whisperSetupBusy,
     saveAudioSettings,
     chooseOutputPath,
     showOutputFolder,
     chooseSrtOutputPath,
     showSrtOutputFolder,
-    setupWhisper,
-
     // Job
     job,
     projectId,

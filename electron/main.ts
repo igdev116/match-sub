@@ -13,7 +13,7 @@ import {
   mergeAudio,
   stopBuild,
 } from './ffmpeg'
-import { parseSrt } from './srt-parser'
+import { parseSrt, secondsToSrtTime } from './srt-parser'
 import type {
   AudioTimeline,
   AudioMergeConfig,
@@ -40,7 +40,6 @@ import {
   downloadBaseModel,
   getWhisperStatus,
   installWhisper,
-  transcribeToSrt,
 } from './whisper'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -257,7 +256,9 @@ function inspectSourceFolder(folderPath: string): SourceFolderInspection {
 
   if (!imagesDirectory) errors.imagesDirectory = 'Thiếu thư mục ảnh hoặc thư mục không có ảnh.'
   if (!sceneListPath) errors.sceneListPath = 'Thiếu file Excel .xlsx/.xls.'
-  if (!srtPath) errors.srtPath = 'Thiếu file SRT.'
+  if (!srtPath && !timelinePath) {
+    errors.srtPath = 'Thiếu file SRT fallback hoặc Timeline audio.'
+  }
   if (!outputParentInfo.exists || outputParentInfo.kind !== 'directory') {
     errors.outputPath = 'Folder cha của output không tồn tại.'
   }
@@ -608,6 +609,37 @@ async function createAudioTimeline(config: AudioMergeConfig): Promise<{
   const timelinePath = timelinePathForAudio(config.outputPath)
   fs.writeFileSync(timelinePath, `${JSON.stringify(timeline, null, 2)}\n`, 'utf8')
   return { timeline, timelinePath }
+}
+
+function createSceneSrt(
+  sceneListPath: string,
+  timeline: AudioTimeline,
+  outputPath: string,
+): void {
+  const scenes = readScenes(sceneListPath)
+  if (scenes.length !== timeline.items.length) {
+    throw new Error(
+      `Không thể tạo SRT: Excel có ${scenes.length} scene nhưng danh sách ghép có ${timeline.items.length} audio.`,
+    )
+  }
+
+  const blocks = scenes.map((scene, index) => {
+    const timelineItem = timeline.items[index]
+    if (timelineItem.sceneNumber !== scene.number) {
+      throw new Error(
+        `Không thể tạo SRT: vị trí ${index + 1} là scene ${scene.number} trong Excel nhưng Timeline là scene ${timelineItem.sceneNumber}.`,
+      )
+    }
+    const subtitleEnd = timelineItem.startSeconds + timelineItem.audioDurationSeconds
+    return [
+      String(index + 1),
+      `${secondsToSrtTime(timelineItem.startSeconds)} --> ${secondsToSrtTime(subtitleEnd)}`,
+      scene.content,
+    ].join('\n')
+  })
+
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+  fs.writeFileSync(outputPath, `${blocks.join('\n\n')}\n`, 'utf8')
 }
 
 async function getMediaDurationSeconds(filePath: string): Promise<number | null> {
@@ -1309,17 +1341,34 @@ app.whenReady().then(() => {
         },
       }))
       if (config.createSrt) {
-        await transcribeToSrt(config, (progress) => {
-          if (progress.percent >= 100) return
-          sendProgress({
-            phase: progress.percent < 15 ? 'normalizing' : 'transcribing',
-            percent: progress.percent,
-            message: progress.message,
-            outputPath: config.outputPath,
-            srtOutputPath: config.srtOutputPath,
-            timelinePath,
-          })
+        if (!config.sceneListPath?.trim()) {
+          throw new Error('Chưa chọn file Excel kịch bản để tạo SRT.')
+        }
+        if (!config.srtOutputPath?.trim()) {
+          throw new Error('Chưa chọn đường dẫn file SRT output.')
+        }
+        sendProgress({
+          phase: 'subtitling',
+          percent: 92,
+          message: 'Đang tạo SRT chính xác từ Excel và Timeline...',
+          outputPath: config.outputPath,
+          srtOutputPath: config.srtOutputPath,
+          timelinePath,
         })
+        createSceneSrt(
+          config.sceneListPath,
+          timelineResult.timeline,
+          config.srtOutputPath,
+        )
+        updateProject(config.projectId, (project) => ({
+          ...project,
+          lastSrtPath: config.srtOutputPath!,
+          videoSettings: {
+            ...project.videoSettings,
+            srtPath: config.srtOutputPath!,
+            timelinePath: timelineResult.timelinePath,
+          },
+        }))
       }
       sendProgress({
         phase: 'complete',
